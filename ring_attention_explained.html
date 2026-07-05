@@ -1,0 +1,1739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Ring Attention 深入详解 · 交互式教程</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+<style>
+:root {
+  --bg: #0f1220;
+  --bg-elev: #171a2b;
+  --bg-card: #1c2038;
+  --fg: #e8ebf5;
+  --fg-dim: #a4a9c1;
+  --accent: #7dd3fc;
+  --accent-2: #a78bfa;
+  --accent-3: #34d399;
+  --accent-warn: #fbbf24;
+  --border: #2a2f4a;
+  --code-bg: #0b0e1a;
+  --q-color: #f472b6;
+  --k-color: #7dd3fc;
+  --v-color: #34d399;
+  --grad-color: #fbbf24;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #0a0d19 0%, #0f1220 100%);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+  line-height: 1.75;
+  font-size: 16px;
+}
+.container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+header.hero {
+  padding: 56px 0 40px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+header.hero h1 {
+  margin: 0 0 12px;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(90deg, #7dd3fc, #a78bfa, #f472b6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+header.hero p {
+  color: var(--fg-dim);
+  font-size: 18px;
+  max-width: 780px;
+  margin: 0;
+}
+header.hero .tags {
+  margin-top: 20px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tag {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+nav.toc {
+  position: sticky;
+  top: 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 32px;
+  font-size: 14px;
+  z-index: 20;
+}
+nav.toc strong { color: var(--accent); margin-right: 12px; }
+nav.toc a {
+  color: var(--fg-dim);
+  text-decoration: none;
+  margin-right: 14px;
+  border-bottom: 1px dashed transparent;
+  transition: 0.2s;
+}
+nav.toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+section {
+  margin-bottom: 56px;
+}
+section h2 {
+  font-size: 28px;
+  border-left: 4px solid var(--accent);
+  padding-left: 14px;
+  margin: 0 0 24px;
+  color: #fff;
+}
+section h3 {
+  font-size: 20px;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  color: var(--accent);
+}
+p { color: #dfe3f3; }
+p code, li code {
+  background: rgba(125, 211, 252, 0.12);
+  color: #b8e5fd;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.9em;
+}
+.callout {
+  background: var(--bg-card);
+  border-left: 4px solid var(--accent-2);
+  padding: 16px 20px;
+  border-radius: 6px;
+  margin: 20px 0;
+  color: #d9dcf0;
+}
+.callout.tip { border-left-color: var(--accent-3); }
+.callout.warn { border-left-color: var(--accent-warn); }
+.callout .lead { color: var(--accent-2); font-weight: 600; margin-right: 6px; }
+.callout.tip .lead { color: var(--accent-3); }
+.callout.warn .lead { color: var(--accent-warn); }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.card-title {
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 14px;
+  font-size: 17px;
+}
+
+pre[class*="language-"] {
+  background: var(--code-bg) !important;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+code[class*="language-"] { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+}
+.pill-q { background: rgba(244, 114, 182, 0.18); color: #f9a8d4; border: 1px solid rgba(244, 114, 182, 0.35); }
+.pill-k { background: rgba(125, 211, 252, 0.18); color: #7dd3fc; border: 1px solid rgba(125, 211, 252, 0.35); }
+.pill-v { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; border: 1px solid rgba(52, 211, 153, 0.35); }
+.pill-g { background: rgba(251, 191, 36, 0.18); color: #fcd34d; border: 1px solid rgba(251, 191, 36, 0.35); }
+
+/* ============ Ring diagram styles ============ */
+.demo-frame {
+  background: linear-gradient(160deg, #131629, #0f1425);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  margin: 24px 0;
+}
+.demo-title {
+  font-size: 15px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+.demo-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .demo-body { grid-template-columns: 1fr; }
+}
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.btn {
+  background: var(--bg-card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.15s;
+  font-family: inherit;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); color: #0a0d19; border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { background: #38bdf8; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.slider-row { display: flex; align-items: center; gap: 10px; }
+.slider-row label { font-size: 13px; color: var(--fg-dim); min-width: 60px; }
+input[type=range] { accent-color: var(--accent); }
+select {
+  background: var(--bg-card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: inherit;
+}
+.info {
+  background: rgba(125, 211, 252, 0.06);
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #cfe8f6;
+  font-family: ui-monospace, monospace;
+  line-height: 1.7;
+  margin-top: 10px;
+}
+.info .k { color: #fbbf24; }
+.info .n { color: #7dd3fc; }
+.info .g { color: #6ee7b7; }
+.info .r { color: #f472b6; }
+
+svg text { font-family: ui-monospace, "SF Mono", monospace; }
+
+.grid-heatmap { border-collapse: collapse; margin: 0 auto; }
+.grid-heatmap td {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #0a0d19;
+  font-size: 10px;
+  text-align: center;
+  color: rgba(255,255,255,0.6);
+  transition: background 0.4s ease;
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+table.spec {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+}
+table.spec th, table.spec td {
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  text-align: left;
+}
+table.spec th {
+  background: var(--bg-elev);
+  color: var(--accent);
+  font-weight: 600;
+}
+table.spec code { background: transparent; color: #fcd34d; padding: 0; }
+
+.step-tracker {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--fg-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, monospace;
+  transition: 0.2s;
+}
+.step-dot.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.step-dot.done { background: rgba(125, 211, 252, 0.2); color: var(--accent); border-color: var(--accent); }
+
+.osoft-canvas {
+  background: #0a0d1a;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.osoft-row {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.osoft-row .lab { color: var(--fg-dim); text-align: right; }
+.bar-outer {
+  height: 18px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+.bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  color: #000;
+  font-size: 11px;
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>Ring Attention 深入详解</h1>
+  <p>把无限长的序列切成小块，让每个 GPU 只算一小段 —— 但结果与在单卡上跑完整注意力完全一致。本文用可交互的动画、完整数学推导，配合两份可执行的 PyTorch 代码（单进程模拟版 <span class="tag">ring_attn_demo_code.py</span> 与真·分布式版 <span class="tag">ring_attn.py</span>），把这套算法的每一步都拆给你看。</p>
+  <div class="tags">
+    <span class="tag">Sequence Parallelism</span>
+    <span class="tag">Online Softmax</span>
+    <span class="tag">FlashAttention</span>
+    <span class="tag">Distributed Training</span>
+    <span class="tag">Long Context</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <strong>目录</strong>
+  <a href="#motivation">① 为什么需要它</a>
+  <a href="#recap">② 注意力回顾</a>
+  <a href="#online">③ Online Softmax</a>
+  <a href="#ring-fwd">④ Ring 前向</a>
+  <a href="#ring-bwd">⑤ Ring 反向</a>
+  <a href="#causal">⑥ Causal 优化</a>
+  <a href="#code">⑦ 代码对照</a>
+  <a href="#summary">⑧ 小结</a>
+</nav>
+
+<!-- =============== SECTION 1 =============== -->
+<section id="motivation">
+<h2>① 从内存瓶颈说起：为什么需要 Ring Attention</h2>
+
+<p>标准的自注意力，对长度为 $N$ 的序列，需要显式生成一张 $N \times N$ 的注意力矩阵；这张矩阵会以 <span class="pill pill-q">O(N²)</span> 的速度爆炸。为了让"到底会爆多快"变得直观，我们把假设写清楚，代入几个 $N$ 值算一遍——</p>
+
+<div class="callout">
+  <span class="lead">前提假设：</span>取一个中等规模模型的一层 attention 做示例。<b>batch=1</b>，<b>num_heads=32</b>，<b>head_dim=128</b>，训练精度 <b>bf16</b>（2 bytes/元素）。分数矩阵 $S = QK^\top/\sqrt d$ 每个 head 都是 $N \times N$；<b>一层所有 head 加起来</b>需要的显存约为：
+  $$\text{Mem}_{\text{一层}\,S} \;\approx\; \text{num\_heads} \times N^2 \times 2\ \text{B} \;=\; 64 \cdot N^2\ \text{B}.$$
+  （反向要保留概率矩阵 $A = \text{softmax}(S)$，实际占用大致翻倍；下面数字取的是"$S$ 单份"的下界。）
+</div>
+
+<table class="spec">
+  <thead><tr><th>序列长度 N</th><th>$64 \cdot N^2$</th><th>一层单份 $S$ 大约占</th></tr></thead>
+  <tbody>
+    <tr><td>8K</td><td>$64 \cdot (8192)^2$</td><td>~ 4 GB</td></tr>
+    <tr><td>32K</td><td>$64 \cdot (32768)^2$</td><td>~ 64 GB</td></tr>
+    <tr><td>128K</td><td>$64 \cdot (131072)^2$</td><td>~ 1 TB</td></tr>
+  </tbody>
+</table>
+
+<p>再乘上层数（数十层）与反向保存的中间量，$N = 128\text{K}$ 单卡已完全不可行——即便 $N = 32\text{K}$，单张 80GB 显卡也只够放一层的分数矩阵。要继续把序列做长，就必须把这张 $N \times N$ 从"一整块"拆开。解决办法有两类思路：</p>
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">🔹 FlashAttention · 时间维度切分</div>
+    <p>把 K/V 分成很多小块，通过 <b>online softmax</b> 在片上 SRAM 中一块一块累加，永远不物化完整的注意力矩阵。<b>单卡内</b>解决内存问题。</p>
+  </div>
+  <div class="card">
+    <div class="card-title">🔸 Ring Attention · 空间维度切分</div>
+    <p>把序列切成 P 段分给 P 张卡，每张卡只存 <span class="pill pill-q">Q_i</span> <span class="pill pill-k">K_i</span> <span class="pill pill-v">V_i</span>，让 K/V 沿着一个环形拓扑轮转 P 步，就能完成全局注意力。<b>跨卡</b>解决内存问题。</p>
+  </div>
+</div>
+
+<div class="callout tip">
+  <span class="lead">核心洞察：</span>Ring Attention = 把 FlashAttention 的思想从 "SRAM ↔ HBM" 提升到 "GPU ↔ GPU"。同样的 online softmax 数学骨架，只是把 "K/V 分块从 HBM 流入 SRAM" 替换为 "K/V 分块通过 NCCL 从相邻 GPU 传入"。
+</div>
+</section>
+
+<!-- =============== SECTION 2 =============== -->
+<!-- =============== SECTION 2 =============== -->
+<section id="recap">
+<h2>② 标准注意力速览与"分块"直觉</h2>
+
+<h3>从 hidden state 到 (N, d)</h3>
+
+<p>写数学之前先把张量形状理清。Transformer 每层的输入是 hidden state，其 shape 为 <code>(batch_size, seq_len, hidden_dim)</code>。真正进入 attention 前会先做 multi-head 拆分，把最后一维切成 <code>num_heads × head_dim</code>，得到 <code>(batch_size, seq_len, num_heads, head_dim)</code>。</p>
+
+<p>关键在于：<b>attention 的运算对 batch 与每个 head 都是独立的</b>——它们只是"并行维度"，reshape 到最前面即可批量处理。真正参与数学的只剩下最后两维：<b>seq_len ($N$) 与 head_dim ($d$)</b>。所以后文所有推导都在 $(N, d)$ 上进行，$Q, K, V \in \mathbb{R}^{N \times d}$。</p>
+
+<table class="spec">
+  <thead><tr><th>张量</th><th>常见 shape</th><th>attention 只需关心</th></tr></thead>
+  <tbody>
+    <tr><td>hidden state</td><td>(batch, seq_len, hidden_dim)</td><td>—</td></tr>
+    <tr><td>multi-head 拆分</td><td>(batch, seq_len, num_heads, head_dim)</td><td>—</td></tr>
+    <tr><td>单 batch·单 head 的 $Q, K, V$</td><td>(seq_len, head_dim) = <b>($N$, $d$)</b></td><td>✅</td></tr>
+  </tbody>
+</table>
+
+<p>基于这个抽象，标准注意力可以直接写成：</p>
+$$
+\text{Attn}(Q, K, V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d}}\right) V,
+\quad Q, K, V \in \mathbb{R}^{N \times d}.
+$$
+
+<div class="callout tip">
+  <span class="lead">符号（先约定，后面全篇通用）：</span>
+  <table class="spec" style="margin-top:8px">
+    <thead><tr><th>符号</th><th>形状</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td>$N$</td><td>标量</td><td>序列总长度（token 数）</td></tr>
+      <tr><td>$d$</td><td>标量</td><td>每个 attention head 的维度 head_dim</td></tr>
+      <tr><td>$P$</td><td>标量</td><td>GPU 数量（sequence parallel 度）</td></tr>
+      <tr><td>$Q, K, V$</td><td>$N \times d$</td><td>全局 query / key / value 矩阵；每一行是一个 token</td></tr>
+      <tr><td>$i, j$</td><td>$\in \{1, \dots, P\}$</td><td>GPU 编号（<b>数学下标从 1 起</b>；代码里从 0 起，语义相同）</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>沿序列维切成 P 块</h3>
+<p>把 $Q, K, V$ 沿序列维等分成 P 块，每块高度为 $N/P$：</p>
+$$
+Q = \begin{bmatrix} Q_1 \\ Q_2 \\ \vdots \\ Q_P \end{bmatrix},\quad
+K = \begin{bmatrix} K_1 \\ K_2 \\ \vdots \\ K_P \end{bmatrix},\quad
+V = \begin{bmatrix} V_1 \\ V_2 \\ \vdots \\ V_P \end{bmatrix},\quad
+Q_i, K_i, V_i \in \mathbb{R}^{(N/P) \times d}.
+$$
+
+<ul style="font-size:14px">
+  <li><b>下标 $i$</b>（在 $Q_i, K_i, V_i, O_i$ 里）—— "第 i 张 GPU 持有的那一份"；也就是全局序列在行方向被切开的第 i 段。</li>
+  <li><b>第 i 张 GPU 只持有 $Q_i, K_i, V_i$</b>。它负责算出输出的第 i 块 $O_i \in \mathbb{R}^{(N/P) \times d}$。</li>
+</ul>
+
+<h3>第 i 块的输出</h3>
+<p>把行 softmax 展开成"分块和"的形式。先定义<b>分数子矩阵</b> $S_{i,j}$：</p>
+$$
+S_{i,j} \;=\; \frac{Q_i \, K_j^\top}{\sqrt{d}} \;\in\; \mathbb{R}^{(N/P) \times (N/P)},\qquad i, j \in \{1, \dots, P\}.
+$$
+
+<ul style="font-size:14px">
+  <li><b>下标 $i$</b>（$S$ 的第一个下标） —— 查询方分片编号，来自 $Q_i$ 的那 $N/P$ 行；也是本卡的 rank。</li>
+  <li><b>下标 $j$</b>（$S$ 的第二个下标） —— 键值方分片编号，来自 $K_j$ 的那 $N/P$ 行；在环上第 j 步转到本卡。</li>
+  <li>$S_{i,j}$ 是一整个"块"，行方向对应 $Q_i$ 的 $N/P$ 个 query，列方向对应 $K_j$ 的 $N/P$ 个 key。</li>
+</ul>
+
+<p>第 i 块的输出是全局行 softmax 后再乘 V：</p>
+$$
+O_i \;=\; \text{softmax}_{\text{row}}\!\Big([\,S_{i,1},\ S_{i,2},\ \dots,\ S_{i,P}\,]\Big)
+      \cdot \begin{bmatrix} V_1 \\ V_2 \\ \vdots \\ V_P \end{bmatrix}
+    \;=\; \sum_{j=1}^{P} A_{i,j} \, V_j.
+$$
+
+<p>其中 $A_{i,j}$ 是完整行 softmax 后<b>属于第 j 列块</b>的那部分（行方向的归一化跨全部 P 块共同完成）：</p>
+
+$$
+A_{i,j} \;=\; \frac{\exp\!\big(S_{i,j} - m_i\big)}{\ell_i},\qquad
+m_i \;=\; \max_{\,j \in [1..P],\ k \in [1..\,N/P]}\; \big(S_{i,j}\big)_{\bullet,\,k},\qquad
+\ell_i \;=\; \sum_{j=1}^{P}\ \sum_{k=1}^{N/P}\, \exp\!\Big(\big(S_{i,j}\big)_{\bullet,\,k} - m_i\Big).
+$$
+
+<ul style="font-size:14px">
+  <li><b>下标 $i$</b>（$A_{i,j}, m_i, \ell_i, O_i$ 里）—— 查询方分片；每一行 query 各有自己的 $m_i, \ell_i$（更严格地讲 $m_i, \ell_i$ 都还有一个行下标；这里为简洁一律记作 $m_i$，代码里就是 <code>mi</code> 的一整列）。</li>
+  <li><b>下标 $j$</b>（$A_{i,j}$ 里）—— 键值方分片：$A_{i,j}$ 是完整注意力矩阵 $A$ 中第 i 行块×第 j 列块的那一小块。</li>
+  <li><b>下标 $k$</b>（$(S_{i,j})_{\bullet,\,k}$ 里）—— <b>块内列位置</b>：$k \in \{1, \dots, N/P\}$ 索引 $K_j$ 分片内部的第 $k$ 个 key。所以 $(S_{i,j})_{\bullet,\,k}$ 表示 $S_{i,j}$ 的第 k 列（每行对应一个 query 与该 key 的分数）。$m_i$ 和 $\ell_i$ 是在整条 query 行的 $N$ 个位置上取 max/求和，等价于跨所有 $j$ 与所有 $k$ 遍历。</li>
+</ul>
+
+<div class="callout">
+  <span class="lead">关键观察：</span><b>每个 $Q_i$ 都要用到全部 P 份 $K_j, V_j$</b>（因为 softmax 分母 $\ell_i$ 跨全部 P 块）。所以 Ring Attention 让 <span class="pill pill-q">Q_i</span> 固定在第 i 张卡上，让 <span class="pill pill-k">K_j</span> / <span class="pill pill-v">V_j</span> 沿环形依次到达。每步凑齐一列 $S_{i, j}$ 和一段 $V_j$，通过下一节的 online softmax 增量合并出 $O_i$。
+</div>
+
+<h3>与 <code>ring_attn_demo_code.py</code> 的对应</h3>
+
+<p>Demo 代码用<b>单进程 for 循环模拟 P 张卡</b>。它把整个 QKV 张量沿序列维切开、然后再切 Q/K/V 三份，得到 <code>qkv_chunks[i][0/1/2]</code> 分别就是数学式里的 $Q_i, K_i, V_i$：</p>
+
+<pre><code class="language-python"># ring_attn_demo_code.py:71 —— 沿 dim=1 (序列维) 切成 P=num_of_gpus 块
+qkv_chunks = [item.chunk(3, dim=2) for item in qkv_total.chunk(num_of_gpus, dim=1)]
+# qkv_chunks[i][0] ↔ Q_i     shape: (batch, N/P, num_heads, head_dim)
+# qkv_chunks[i][1] ↔ K_i     shape: (batch, N/P, num_heads, head_dim)
+# qkv_chunks[i][2] ↔ V_i     shape: (batch, N/P, num_heads, head_dim)
+
+for i in range(num_of_gpus):              # ← "我"是 rank i，Q_i 固定
+    qi = qkv_chunks[i][0].transpose(1, 2)  # 拿到本卡的 Q_i
+
+    # 初始化 online softmax 三个累加器（下一节详细讲）
+    oi = torch.zeros_like(qi)                            # 分子 o (累积)
+    mi = qi.new_full((..., 1), -float("inf"))            # 行最大 m (累积)
+    li = torch.zeros_like(mi)                            # 分母 ℓ (累积)
+
+    for j in range(num_of_gpus):          # ← K/V 从 j=1 转到 j=P
+        kj = qkv_chunks[j][1].transpose(1, 2)   # K_j (下一节我们让它沿环转)
+        vj = qkv_chunks[j][2].transpose(1, 2)   # V_j
+
+        # ↓ 完全对应数学式 S_{i,j} = Q_i K_j^T / sqrt(d)
+        scores_ij = (qi @ kj.transpose(-2, -1)) / (head_dim ** 0.5)
+        # ... online softmax 增量合并（见 §3） ...</code></pre>
+
+<p>后面 §3 讲的 online softmax 就发生在内层循环里；到 §4，我们会把"内层 for j"替换成"沿环轮转的 send/recv"，就得到真正的 Ring Attention。</p>
+
+<div class="demo-frame">
+  <div class="demo-title">🎬 交互动画 · 分块 QK^T 与"环上传播"直觉</div>
+  <div class="demo-body">
+    <div>
+      <svg id="svg-basic" viewBox="0 0 420 340" width="100%" height="340" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend">
+        <span><span class="legend-dot" style="background:#f472b6"></span>Q_i（本卡固定）</span>
+        <span><span class="legend-dot" style="background:#7dd3fc"></span>K_j（每步轮转）</span>
+        <span><span class="legend-dot" style="background:#a78bfa"></span>当前计算的 S_{i,j}</span>
+      </div>
+    </div>
+    <div>
+      <p style="margin-top:0">拖动下方步数条，或直接自动播放，观察：<br>
+      — 左侧：GPU_i 视角下，Q_i 保持不动，而 K_j 一步步"轮换"到它面前；<br>
+      — 右侧：每一步会点亮 $S = QK^\top$ 中的一个小块。</p>
+      <div class="slider-row"><label>P (GPU 数)</label>
+        <select id="basic-P">
+          <option>4</option><option selected>6</option><option>8</option>
+        </select>
+      </div>
+      <div class="slider-row"><label>i (观察谁)</label>
+        <input id="basic-i" type="range" min="0" max="5" value="2">
+        <span id="basic-i-val" style="font-family:monospace;color:var(--accent)">2</span>
+      </div>
+      <div class="slider-row"><label>step</label>
+        <input id="basic-step" type="range" min="0" max="5" value="0">
+        <span id="basic-step-val" style="font-family:monospace;color:var(--accent)">0</span>
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="basic-play">▶ 播放</button>
+        <button class="btn" id="basic-reset">重置</button>
+      </div>
+      <div class="info" id="basic-info"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =============== SECTION 3 =============== -->
+<section id="online">
+<h2>③ 关键零件：Online Softmax</h2>
+
+<h3>承接 §2:挑战是什么</h3>
+
+<p>§2 给出的每卡输出是</p>
+$$
+O_i \;=\; \sum_{j=1}^{P} A_{i,j}\, V_j,\qquad
+A_{i,j} \;=\; \frac{\exp(S_{i,j} - m_i)}{\ell_i}.
+$$
+<p>行 softmax 的稳定项 $m_i$ 与分母 $\ell_i$ <b>横跨全部 P 块</b> —— 想直接算 $A_{i,j}$ 就得先"看完"整行 $S_{i,\cdot}$。但 Ring 一次只送一块 K/V 到本卡，能算的只有<b>一列分数块</b>:</p>
+$$
+s^{(j)} \;=\; \frac{q\, K_j^\top}{\sqrt{d}} \;\in\; \mathbb{R}^{N/P},\qquad j \in \{1, 2, \dots, P\}.
+$$
+<p style="margin-top:-4px;font-size:14px;color:var(--fg-dim)">$q \in \mathbb{R}^{d}$ 是 $Q_i$ 中<b>某一行</b> query(后文所有推导都锁定这一行;代码对 $Q_i$ 的 $N/P$ 行完全并行执行)。上标 $(j)$ 表示"第 $j$ 块 / 第 $j$ 步的量";$s^{(j)}$ 就是 §2 里 $[S_{i,1}, \dots, S_{i,P}]$ 沿列拼接后取该 query 行得到的第 $j$ 段。</p>
+
+<p><b>Online softmax 就是解决这个矛盾的算法</b>:只用当前手上的一块 $s^{(j)}$(配上 $V_j$),维护三个滚动累加器,$P$ 步之后与"一次性看完整行 $s$"的标准 softmax 结果<b>逐元素严格相等</b>。</p>
+
+<h3>三个累加器</h3>
+
+<p>用<b>上标 $(j)$ 表示"看完前 $j$ 块之后的状态"</b>,三者随 $j$ 从 $1$ 增到 $P$ 被反复覆盖:</p>
+
+<ul style="font-size:14px">
+  <li><b>$m^{(j)} \in \mathbb{R}$</b>:前 $j$ 块所有分数的<b>全局最大值</b>(减 max 稳定 $\exp$)。初始 $-\infty$。</li>
+  <li><b>$\ell^{(j)} \in \mathbb{R}$</b>:前 $j$ 块贡献的 <b>softmax 分母</b>,以当前 $m^{(j)}$ 为基准。初始 $0$。</li>
+  <li><b>$o^{(j)} \in \mathbb{R}^{d}$</b>:前 $j$ 块贡献的 <b>attention 输出分子</b>($\sum \exp(\cdot)\,V_j$,同以 $m^{(j)}$ 为基准)。初始 $\mathbf 0$。</li>
+</ul>
+<p style="font-size:14px;color:var(--fg-dim)">目标:当 $j = P$ 时,$o^{(P)} / \ell^{(P)}$ 即为 §2 中该 query 行对应的完整 attention 输出,与"一次性 softmax"结果<b>逐元素严格相等</b>。</p>
+
+<h3>增量更新:一块进来时做什么</h3>
+
+<p>已看完前 $j{-}1$ 块,手里是 $(m^{(j-1)}, \ell^{(j-1)}, o^{(j-1)})$;现在第 $j$ 块的 $s^{(j)} \in \mathbb{R}^{N/P}$ 与 $V_j \in \mathbb{R}^{(N/P) \times d}$ 送到本卡,更新为新的 $(m^{(j)}, \ell^{(j)}, o^{(j)})$:</p>
+
+<div class="card" style="background:linear-gradient(135deg,#1a1c30,#181b30)">
+$$
+\begin{aligned}
+&\text{① 本块内最大值:}          && m^{\text{blk}}_{\,j} \;=\; \max_{k}\, s^{(j)}_k \\[4pt]
+&\text{② 更新全局最大值:}        && m^{(j)} \;=\; \max\!\big(m^{(j-1)},\ m^{\text{blk}}_{\,j}\big) \\[4pt]
+&\text{③ 两个"改基准"缩放系数:}  && \alpha_j \;=\; e^{\,m^{(j-1)} - m^{(j)}},\qquad \beta_j \;=\; e^{\,m^{\text{blk}}_{\,j} - m^{(j)}} \\[4pt]
+&\text{④ 更新分母 $\ell$:}       && \ell^{(j)} \;=\; \alpha_j\, \ell^{(j-1)} \;+\; \beta_j \sum_{k} e^{\,s^{(j)}_k - m^{\text{blk}}_{\,j}} \\[4pt]
+&\text{⑤ 更新分子 $o$:}          && o^{(j)}   \;=\; \alpha_j\, o^{(j-1)}   \;+\; \beta_j \sum_{k} e^{\,s^{(j)}_k - m^{\text{blk}}_{\,j}}\, V_j[k,:]
+\end{aligned}
+$$
+</div>
+
+<ul style="font-size:14px">
+  <li><b>下标 $k \in \{1,\dots,N/P\}$</b>:块内位置;$V_j[k,:] \in \mathbb{R}^d$ 是第 $j$ 块 V 的第 $k$ 行。</li>
+  <li><b>$\alpha_j$</b>:把旧累加器(原以 $m^{(j-1)}$ 为减去项)<b>重定基到新的 $m^{(j)}$</b>;新块未刷新 max 时 $\alpha_j = 1$,旧累加器不动。</li>
+  <li><b>$\beta_j$</b>:把本块局部指数(以 $m^{\text{blk}}_{\,j}$ 为基准)也重定基到 $m^{(j)}$。</li>
+</ul>
+
+<div class="callout warn">
+  <span class="lead">要点:$(m, \ell, o)$ 是"滚动覆盖"的累加器。</span>
+  <ul style="margin:6px 0">
+    <li>每来一块 $j$,三者<b>都要重新赋值</b>成 $m^{(j)}, \ell^{(j)}, o^{(j)}$;代码里用同名变量原地覆盖。</li>
+    <li>$m^{(j)}$ 单调不减,数值因"减 max"始终稳定,不会因 $\exp$ 爆炸。</li>
+    <li>$P$ 步循环结束时 <b>$o^{(P)} / \ell^{(P)}$ 与一次性 softmax 结果逐元素严格相等</b> —— 这就是 online softmax 的等价性保证:$m^{(P)}$ 就是整行 max,$\ell^{(P)}$ 就是整行分母。</li>
+  </ul>
+</div>
+
+<div class="demo-frame">
+  <div class="demo-title">🎬 交互动画 · 三个分块 vs 一次性 softmax 逐步对照</div>
+  <div class="demo-body">
+    <div>
+      <div class="osoft-canvas" id="osoft-canvas"></div>
+    </div>
+    <div>
+      <p style="margin-top:0">本 demo 模拟 <b>1 行 query $q \in \mathbb{R}^2$</b>,$N=6$ 沿序列维切成 <b>P=3 块</b> K/V(即 $d=2$、$N/P=2$)。点『下一块 →』依次让 $(K_j, V_j)$ 进入本卡,一次看到:
+      <br>· 当前块 $K_j$ / $V_j$ 的数值,以及现场算出的 $s^{(j)} = qK_j^\top / \sqrt{d}$;
+      <br>· 三个累加器 $(m, \ell, o)$ 如何被增量更新;
+      <br>· 循环结束后,online 结果与右下方"一次性 softmax 参考"逐元素对齐。</p>
+      <div class="controls">
+        <button class="btn primary" id="os-next">下一块 →</button>
+        <button class="btn" id="os-reset">重置</button>
+      </div>
+      <div class="info" id="os-info"></div>
+    </div>
+  </div>
+</div>
+
+<h3>与 <code>ring_attn_demo_code.py</code> 的对应</h3>
+
+<p>把上面 5 步公式一一对照 demo 代码内层 for j 循环（第 98–135 行）：</p>
+
+<pre><code class="language-python">for j in range(num_of_gpus):                    # ← 遍历 j = 1..P
+    kj = qkv_chunks[j][1].transpose(1, 2)       # K_j
+    vj = qkv_chunks[j][2].transpose(1, 2)       # V_j
+
+    # ── 分块分数 s^(j) = Q_i K_j^T / sqrt(d)  （每行 query 各一份, 长度 N/P）
+    scores_ij = (qi @ kj.transpose(-2, -1)) / (head_dim ** 0.5)   # ↔ s^(j)
+
+    # ── ① 本块内 max   m_blk_j = max_k s^(j)_k
+    m_ij = torch.max(scores_ij, dim=-1, keepdim=True).values      # ↔ m_blk_j
+    exp_scores_ij = torch.exp(scores_ij - safe_max(m_ij))          # ↔ exp(s^(j) - m_blk_j)
+
+    # ── ② 新的全局 max   m^(j) = max(m^(j-1), m_blk_j)
+    mi_new = torch.maximum(mi, m_ij)                               # ↔ m^(j)
+
+    # ── ③④⑤ 累加器 (o, ℓ) 用 α_j, β_j 缩放后合并
+    #     α_j = exp(m^(j-1) - m^(j))                = torch.exp(safe_max(mi)   - safe_max(mi_new))
+    #     β_j = exp(m_blk_j  - m^(j))                = torch.exp(safe_max(m_ij) - safe_max(mi_new))
+    oi = (
+        oi                    * torch.exp(safe_max(mi)   - safe_max(mi_new))   # α_j · o^(j-1)
+      + (exp_scores_ij @ vj)  * torch.exp(safe_max(m_ij) - safe_max(mi_new))   # β_j · (exp·V_j)
+    )                                                              # ↔ o^(j)
+    li = (
+        li                            * torch.exp(safe_max(mi)   - safe_max(mi_new))
+      + exp_scores_ij.sum(-1, keepdim=True) * torch.exp(safe_max(m_ij) - safe_max(mi_new))
+    )                                                              # ↔ ℓ^(j)
+
+    # ── m 累加器覆盖成新值  m ← m^(j)
+    mi = mi_new
+
+# 循环结束后：
+out_chunks.append((oi / li).transpose(1, 2))    # ↔ O_i = o^(P) / ℓ^(P)</code></pre>
+
+<div class="callout tip">
+  <span class="lead">对照要点：</span>
+  <ul style="margin:6px 0">
+    <li>代码里的 <code>mi</code>/<code>li</code>/<code>oi</code> 就是数学式中的 $m^{(j-1)} \to m^{(j)}$、$\ell^{(j-1)} \to \ell^{(j)}$、$o^{(j-1)} \to o^{(j)}$；每轮 j 都被覆盖。</li>
+    <li>下标 <code>ij</code> 意为"query 属于 rank i、正处理 K/V 第 j 块"；<code>i_new</code> 后缀就是本轮更新后的新累加器。</li>
+    <li>P 轮结束时 <code>oi/li</code> 恰好是数学式的 $o^{(P)} / \ell^{(P)}$，也就是 $O_i$。</li>
+    <li><code>safe_max</code> 把 $-\infty$（首轮 $m^{(0)}$ 或 causal 全屏蔽块）替换成 0，避免 $-\infty - (-\infty)$ 产生 NaN。</li>
+  </ul>
+</div>
+</section>
+
+<!-- =============== SECTION 4 =============== -->
+<section id="ring-fwd">
+<h2>④ Ring Attention 前向传播</h2>
+
+<h3>拓扑：一个环</h3>
+<p>P 张 GPU 编号 $0, 1, \dots, P{-}1$，构成一个逻辑环：<b>每张卡把自己现在的 K/V 发给右邻居 (rank+1)，同时从左邻居 (rank-1) 接收下一块 K/V</b>。这在 <span class="tag">ring_attn.py</span> 的 <code>RingComm</code> 类里就是几行代码：</p>
+
+<div class="callout tip">
+  <span class="lead">符号（本节新增）：</span>
+  <table class="spec" style="margin-top:8px">
+    <thead><tr><th>符号</th><th>取值</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td>$\text{rank}$ / $i$</td><td>$\in \{0, \dots, P{-}1\}$</td><td>本 GPU 的编号（$i$ 与 §2 数学下标一致，只是这里从 0 开始，方便跟代码对齐）</td></tr>
+      <tr><td>$\text{step}$</td><td>$\in \{0, \dots, P{-}1\}$</td><td>环上的第几步；一共 P 步</td></tr>
+      <tr><td>$k_\text{cur}, v_\text{cur}$</td><td>$(N/P) \times d$</td><td>当前 step 落在本卡的那块 K/V。step=0 时是本地的 $K_i, V_i$；随 step 递增依次变成 $K_{i-1}, K_{i-2}, \dots$</td></tr>
+      <tr><td>$Q_i$</td><td>$(N/P) \times d$</td><td>本卡的 query 分片，<b>始终不动</b></td></tr>
+      <tr><td>$O_i, m_i, \ell_i$</td><td>—</td><td>§2/§3 的累加器</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<pre><code class="language-python">self.send_rank = (self.rank + 1) % self.world_size    # 右邻居
+self.recv_rank = (self.rank - 1) % self.world_size    # 左邻居
+
+send_op = dist.P2POp(dist.isend, to_send,     self.send_rank, group=self._process_group)
+recv_op = dist.P2POp(dist.irecv, recv_tensor, self.recv_rank, group=self._process_group)</code></pre>
+
+<p>这里用的是 <code>isend</code>/<code>irecv</code> 异步接口 + <code>batch_isend_irecv</code>，目的是<b>通信与计算重叠</b>：在轮转步 <em>t</em> 计算当前块时，就已经把要给下一步用的 K/V 发出去了。</p>
+
+<h3>算法流程（P 步循环）</h3>
+<p>每张卡 <code>rank = i</code> 执行：</p>
+<pre><code class="language-python">初始化 (m_i, ℓ_i, o_i) = (-inf, 0, 0)   # softmax 累加器
+k_cur, v_cur = local K_i, local V_i     # 一开始就是自己的 K/V
+
+for step in 0..P-1:
+    if 还有下一步: 异步发 k_cur/v_cur 给右邻居，收左邻居的下一块
+    S = Q_i @ k_cur.T / sqrt(d)          # 本步的分数块
+    (m_i, ℓ_i, o_i) ← online-softmax-merge(m_i, ℓ_i, o_i, S, v_cur)
+    等待接收完成
+    k_cur, v_cur = 接收到的新块
+
+O_i = o_i / ℓ_i</code></pre>
+
+<div class="demo-frame">
+  <div class="demo-title">🎬 交互动画 · 完整 Ring 前向</div>
+  <div class="demo-body">
+    <div>
+      <svg id="svg-ring" viewBox="0 0 460 460" width="100%" height="460" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend">
+        <span><span class="legend-dot" style="background:#f472b6"></span>Q（固定不动）</span>
+        <span><span class="legend-dot" style="background:#7dd3fc"></span>K/V（正在轮转）</span>
+        <span><span class="legend-dot" style="background:#fbbf24"></span>当前 step 计算</span>
+      </div>
+    </div>
+    <div>
+      <p style="margin-top:0"><b>左图</b>：8 个 GPU 排成环，Q 保持在原地，K/V 顺时针依次流转。<br>
+      <b>下方进度</b>：每张卡的注意力矩阵（P×P 分块），黄色是当前 step 刚算完的那一块；累积到最后每一行都填满。</p>
+      <div class="slider-row"><label>P (GPU 数)</label>
+        <select id="ring-P">
+          <option>4</option><option>6</option><option selected>8</option>
+        </select>
+      </div>
+      <div class="slider-row"><label>速度</label>
+        <input id="ring-speed" type="range" min="200" max="1500" value="700" step="100">
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="ring-play">▶ 自动播放</button>
+        <button class="btn" id="ring-step">单步 →</button>
+        <button class="btn" id="ring-reset">重置</button>
+      </div>
+      <div class="step-tracker" id="ring-steps"></div>
+      <div class="info" id="ring-info"></div>
+      <div style="margin-top:12px">
+        <div style="font-size:13px;color:var(--fg-dim);margin-bottom:6px">🔍 每张卡累积的注意力块（列 = K_j，行 = 当前 step）：</div>
+        <div id="ring-matrix" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>时间/内存复杂度</h3>
+<table class="spec">
+<thead><tr><th></th><th>单卡标准 attention</th><th>Ring Attention (P 卡)</th></tr></thead>
+<tbody>
+<tr><td>每卡内存 (峰值)</td><td>O(N² + N·d)</td><td><b>O((N/P)² + (N/P)·d)</b></td></tr>
+<tr><td>每卡计算量 (FLOPs)</td><td>O(N²·d)</td><td>O(N²·d / P)</td></tr>
+<tr><td>每卡通信量</td><td>0</td><td>O(N·d) &nbsp;((P−1) 步 × 2·(N/P)·d ≈ 2N·d,每步同发 K 与 V)</td></tr>
+<tr><td>关键点</td><td>N 增大即 OOM</td><td>P 增大即可支持任意长 N</td></tr>
+</tbody>
+</table>
+
+<p style="font-size:14px;color:var(--fg-dim);margin-top:-8px">
+说明:内存行两列都保留了 linear-in-<code>d</code> 项(标准列的 <code>N·d</code> 来自 Q/K/V/O,Ring 列的 <code>(N/P)·d</code> 来自本地分片 + 收发缓冲);计算量对 P 卡合起来 P · O(N²·d/P) = O(N²·d) 与单卡标准一致(<b>工作量守恒</b>)。上式假设"纯 Ring 不在块内再做 FlashAttention tiling",此时每张卡在处理某一步时会显式物化一个 (N/P)×(N/P) 的 S / A 块;生产实现里若块内继续 tile,(N/P)² 项可进一步压掉。
+</p>
+</section>
+
+<!-- =============== SECTION 5 =============== -->
+<section id="ring-bwd">
+<h2>⑤ Ring Attention 反向传播</h2>
+
+<p>反向的挑战比前向更微妙：一个 K/V 的梯度 <span class="pill pill-g">dK_i, dV_i</span> 需要来自<b>所有</b> Q_j 的贡献，而 Q_j 的梯度 <span class="pill pill-g">dQ_j</span> 也需要所有 K_i 的贡献。谁转谁？</p>
+
+<div class="callout tip">
+  <span class="lead">设计选择：</span>前向让 K/V 转、Q 不动；反向反过来 —— <b>让 Q（连同它的 softmax 统计量和 dO）轮转，K/V 保持不动</b>。这样每张卡 rank=i 累加自己本地的 dK_i、dV_i；而每张 Q 每转一步就积累到一部分 dQ_j，转完一圈 dQ_j 恰好回到原主 rank=j。
+</div>
+
+<h3>反向的数学骨架</h3>
+
+<div class="callout tip">
+  <span class="lead">符号（这一节新增）：</span>
+  <table class="spec" style="margin-top:8px">
+    <thead><tr><th>符号</th><th>形状</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td>$O$</td><td>$N \times d$</td><td>attention 前向输出 $O = AV$</td></tr>
+      <tr><td>$A$</td><td>$N \times N$</td><td>softmax 后的完整注意力矩阵；本节讨论"某一行"或"某一块" $A_{i,j}$</td></tr>
+      <tr><td>$S$</td><td>$N \times N$</td><td>softmax 之前的分数矩阵 $S = QK^\top / \sqrt{d}$</td></tr>
+      <tr><td>$dO$</td><td>$N \times d$</td><td>上游梯度 $\partial L / \partial O$（loss $L$ 对输出的导数）</td></tr>
+      <tr><td>$dA, dS$</td><td>$N \times N$</td><td>$\partial L / \partial A$ 与 $\partial L / \partial S$</td></tr>
+      <tr><td>$dQ, dK, dV$</td><td>$N \times d$</td><td>$\partial L / \partial Q$、$\partial L / \partial K$、$\partial L / \partial V$</td></tr>
+      <tr><td>$\odot$</td><td>—</td><td>逐元素乘 (Hadamard product)</td></tr>
+      <tr><td>下标 $k, h$</td><td>—</td><td>$k \in \{1..N\}$：key 位置（$A, S$ 的列 / $V, O$ 的行）；$h \in \{1..d\}$：head_dim 内部位置</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>Attention 的标准反向公式(与 FlashAttention v2 Algorithm 2 完全等价,只是把 FA 的概率矩阵 <b>P</b> 记作 <b>A</b>、把 FA 的 <b>D_i</b> 记作 <b>δ_r</b>):</p>
+
+$$
+\begin{aligned}
+dV     &\;=\; A^\top \, dO
+   &&\text{（形状 } N \times d\text{；每个 key 位置的 V 梯度；FA: } dV = P^\top dO\text{）}\\
+dA     &\;=\; dO \, V^\top
+   &&\text{（形状 } N \times N\text{；FA: } dP = dO\, V^\top\text{）}\\
+dS     &\;=\; A \odot \big(\, dA \,-\, \delta \cdot \mathbf{1}^\top\big)
+   &&\text{（softmax 反向的经典恒等式,见下推导；FA: } dS = P \odot (dP - D)\text{）}\\
+dQ     &\;=\; dS \, K \,/\, \sqrt{d}
+   &&\text{（形状 } N \times d\text{）}\\
+dK     &\;=\; dS^\top Q \,/\, \sqrt{d}
+   &&\text{（形状 } N \times d\text{）}
+\end{aligned}
+$$
+
+<ul style="font-size:14px">
+  <li><b>$\delta \in \mathbb{R}^{N \times 1}$ 是列向量</b>(每 query 行一个标量): $\displaystyle \delta_r \;=\; \sum_{h=1}^{d} dO_{r,h}\, O_{r,h}$,索引 $r \in \{1..N\}$ 是 query 行位置;下标 $h \in \{1..d\}$ 是 head_dim 维求和。</li>
+  <li><b>$\mathbf{1}^\top \in \mathbb{R}^{1 \times N}$</b> 是全 1 行向量,所以外积 $\delta \cdot \mathbf{1}^\top \in \mathbb{R}^{N \times N}$ 的第 $(r,k)$ 元 = $\delta_r$——即 <b>$\delta$ 沿列方向复制到第 $r$ 行的所有 $N$ 列</b>,每行 query 减去自己那份 $\delta_r$。等价地: $\text{dS}_{r,k} = A_{r,k}\,(dA_{r,k} - \delta_r)$。</li>
+  <li><b>与 FA 的对照:</b> $A \equiv P$(softmax 概率), $dA \equiv dP$, $\delta \equiv D_i$。Ring 相比单卡 FA 只把外层循环轴从 K,V 换到了 Q(分布式 loop-ownership 翻转,不影响数学)。</li>
+</ul>
+
+<div class="callout">
+  <span class="lead">巧妙的恒等式（推导 $\delta$）：</span>softmax 反向里出现 $\sum_k dA_{r,k}\, A_{r,k}$（$r$ 是 query 行；$k$ 是 key 列），看起来要重算一遍完整 $A$。但因为 $O = A V$，可以推出：
+$$
+\sum_{k=1}^{N} dA_{r,k}\, A_{r,k}
+\;=\; \sum_{k=1}^{N}\sum_{h=1}^{d} dO_{r,h}\, V_{k,h}\, A_{r,k}
+\;=\; \sum_{h=1}^{d} dO_{r,h}\, \underbrace{\big(\textstyle\sum_k A_{r,k} V_{k,h}\big)}_{= O_{r,h}}
+\;=\; \sum_{h=1}^{d} dO_{r,h}\, O_{r,h}
+\;=\; \delta_r.
+$$
+  这一"行内求和项" <b>只依赖当前 Q 行对应的 $O$ 和 $dO$</b>,完全不需要跨 K 通信 —— 记
+  $$\delta_i \;=\; \operatorname{rowsum}\!\big(dO_i \odot O_i,\ \text{axis} = \text{head\_dim}\big) \;\in\; \mathbb{R}^{(N/P) \times 1} \quad (\text{列向量,每 query 行一个标量})$$
+  就是代码里的 <code>delta_cur</code> / <code>sumodo</code>,只依赖 Q 分片(与 KV 分片 $j$ 无关),每个 query 行预算一次即可,跟着 Q 一起在环上转就够了。注意此处的下标 $i$ 复用 §2 的语义:<b>第 $i$ 个 Q/dO 分片</b>。
+</div>
+
+<h3>反向流程（每卡持有本地 K_i, V_i）</h3>
+<pre><code class="language-python">初始化 dK_i = 0, dV_i = 0
+q_cur, sum_cur, max_cur, delta_cur, dO_cur = 本地的 Q_i, ℓ_i, m_i, δ_i, dO_i
+dQ_cur = 0
+
+for step in 0..P-1:
+    异步 发 (q_cur, sum_cur, max_cur, delta_cur, dO_cur) 给右邻居，收左邻居的
+
+    # 用保存的 (ℓ, m) 重建注意力概率块 A_{q_cur, K_i}
+    scores = q_cur @ K_i.T / sqrt(d)
+    A      = exp(scores - max_cur) / sum_cur
+
+    dV_i  += A.T @ dO_cur                                # 只累到本地 dV_i
+    dA     = dO_cur @ V_i.T
+    dS     = A * (dA - delta_cur)                        # δ 是行内标量
+    dK_i  += dS.T @ q_cur / sqrt(d)                      # 只累到本地 dK_i
+    dQ_cur += dS @ K_i    / sqrt(d)                      # 累到 Q_cur 的伙伴 dQ
+
+    等待接收完成 → 换成下一块 (q_cur, ..., dO_cur)
+    同时把 dQ_cur 也发给右邻居（让它跟着自己的 Q 走）</code></pre>
+
+<p>转 P 步之后：每张卡的 dK_i / dV_i 累积完毕；dQ_cur 每步跟着 Q_cur 一起走，转完一整圈后 dQ_cur 回到最初持有 Q_j 的那张卡，就是最终的 dQ_j。</p>
+
+<div class="demo-frame">
+  <div class="demo-title">🎬 交互动画 · Ring 反向（Q 轮转 + dQ 跟着走）</div>
+  <div class="demo-body">
+    <div>
+      <svg id="svg-ring-bwd" viewBox="0 0 460 460" width="100%" height="460" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend">
+        <span><span class="legend-dot" style="background:#7dd3fc"></span>K/V（本地固定）</span>
+        <span><span class="legend-dot" style="background:#f472b6"></span>Q + dO + stats（轮转）</span>
+        <span><span class="legend-dot" style="background:#fbbf24"></span>dQ（跟着 Q 走）</span>
+      </div>
+    </div>
+    <div>
+      <p style="margin-top:0">观察点：<br>
+      · 每一步：K_i/V_i 不动，收到一个 Q_j 就 (a) 更新本地 dK_i/dV_i，(b) 把这一部分 dQ_j 存进 dQ_cur；<br>
+      · 每步末尾：dQ_cur 也跟着 Q 一起发给下一张卡（等价于 "dQ 也在环上转"），保证 dQ_j 最终回到 rank j。</p>
+      <div class="controls">
+        <button class="btn primary" id="bwd-play">▶ 自动播放</button>
+        <button class="btn" id="bwd-step">单步 →</button>
+        <button class="btn" id="bwd-reset">重置</button>
+      </div>
+      <div class="step-tracker" id="bwd-steps"></div>
+      <div class="info" id="bwd-info"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =============== SECTION 6 =============== -->
+<section id="causal">
+<h2>⑥ Causal 模式的重要优化</h2>
+
+<p>因果注意力里 $Q_i$ 只能看 $K_j$ 满足 $j \leq i$，也就是说 <b>P×P 的分块注意力矩阵是一个下三角</b>。Ring 转下来会遇到三类块：</p>
+
+<div class="callout tip">
+  <span class="lead">符号（本节新增）：</span>
+  <table class="spec" style="margin-top:8px">
+    <thead><tr><th>符号</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td>$q_\text{start}, q_\text{end}$</td><td>本块 $Q_i$ 覆盖的<b>全局 token 位置区间</b>：$q_\text{start} = i \cdot (N/P)$，$q_\text{end} = (i+1) \cdot (N/P)$</td></tr>
+      <tr><td>$k_\text{start}, k_\text{end}$</td><td>本步遇到的 $K_j$ 覆盖的全局 token 位置区间：$k_\text{start} = j \cdot (N/P)$，$k_\text{end} = (j+1) \cdot (N/P)$</td></tr>
+      <tr><td>$i, j$</td><td>rank / K 块编号（同 §2）</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>Causal 约束是 <b>query 全局位置 ≥ key 全局位置</b>。所以在 $(i, j)$ 分块层面：</p>
+
+<ul style="font-size:14px">
+  <li>$k_\text{end} \leq q_\text{start}$ ⟹ 整块 K 都在 Q 之前（<b>合法，无需 mask</b>）</li>
+  <li>$k_\text{start} \geq q_\text{end}$ ⟹ 整块 K 都在 Q 之后（<b>完全不可见，skip</b>）</li>
+  <li>其余情况（$k_\text{start} &lt; q_\text{end}$ 且 $k_\text{end} &gt; q_\text{start}$）⟹ 部分重叠（<b>需 elementwise mask</b>）</li>
+</ul>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">🟢 完全过去块（q_end &gt; k_end）</div>
+    <p>整块 K 都在 Q 的过去 → 无需 mask，正常 matmul。</p>
+  </div>
+  <div class="card">
+    <div class="card-title">🟡 对角块（部分重叠）</div>
+    <p>某些位置合法、某些非法 → 生成 elementwise causal mask，把非法位置 $S$ 填成 $-\infty$。</p>
+  </div>
+</div>
+<div class="card">
+  <div class="card-title">🔴 完全未来块（k_start &gt;= q_end）—— 直接 skip！</div>
+  <p>Q 完全不能看这块 K，那连 matmul 都省了，直接 <code>continue</code>。这是 <span class="tag">ring_attn.py</span> causal 路径最重要的加速点：粗略地看，P 越大，被 skip 的块占比越接近 1/2，理论上 causal ring attn 相比 dense ring attn 计算量减半。</p>
+</div>
+
+<p>这就是 <span class="tag">ring_attn.py</span> 里 <code>_get_causal_block_info</code> 的三分类逻辑：</p>
+
+<pre><code class="language-python">if k_start >= q_end:            # 全未来
+    return True, False, ...     # skip_block=True
+needs_mask = k_end > q_start    # 与对角相交 → 需要 elementwise mask
+return False, needs_mask, ...   # 否则整块可用，不需要 mask</code></pre>
+
+<div class="demo-frame">
+  <div class="demo-title">🎬 交互动画 · Causal 环上跳过示意</div>
+  <div class="demo-body">
+    <div>
+      <table class="grid-heatmap" id="causal-heatmap"></table>
+      <div class="legend" style="margin-top:14px;justify-content:center">
+        <span><span class="legend-dot" style="background:#065f46"></span>合法（全部计算）</span>
+        <span><span class="legend-dot" style="background:#b45309"></span>对角（需 mask）</span>
+        <span><span class="legend-dot" style="background:#4b5563"></span>skip（完全跳过）</span>
+        <span><span class="legend-dot" style="background:#fbbf24"></span>当前 step</span>
+      </div>
+    </div>
+    <div>
+      <p style="margin-top:0">左侧展示 P=8 的分块注意力矩阵。左上 → 右下的三角是合法区域；灰色区域是 causal skip。Ring 转的时候，每一步 <span class="pill pill-q">Q_i</span> 遇到的 <span class="pill pill-k">K_j</span> 是 <code>(rank - step) mod P</code>，你会发现：<b>当 step 越大，命中 skip 块的概率越大</b>。</p>
+      <div class="slider-row"><label>观察 i</label>
+        <input id="causal-i" type="range" min="0" max="7" value="3">
+        <span id="causal-i-val" style="font-family:monospace;color:var(--accent)">3</span>
+      </div>
+      <div class="slider-row"><label>step</label>
+        <input id="causal-step" type="range" min="0" max="7" value="0">
+        <span id="causal-step-val" style="font-family:monospace;color:var(--accent)">0</span>
+      </div>
+      <div class="info" id="causal-info"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =============== SECTION 7 =============== -->
+<section id="code">
+<h2>⑦ 两份代码的映射关系</h2>
+
+<p>本教程的两份 PyTorch 参考实现分工非常清晰：</p>
+
+<table class="spec">
+<thead><tr><th></th><th><code>ring_attn_demo_code.py</code> · 单进程模拟</th><th><code>ring_attn.py</code> · 真·分布式</th></tr></thead>
+<tbody>
+<tr><th>目的</th><td>纯教学，一目了然</td><td>能真正在多 GPU 训练里用</td></tr>
+<tr><th>并行方式</th><td>单进程 for 循环模拟 P 张卡</td><td><code>torchrun</code> + NCCL P2P，每卡一个进程</td></tr>
+<tr><th>通信</th><td>无（直接读 <code>qkv_chunks[j]</code>）</td><td><code>batch_isend_irecv</code> 异步 P2P</td></tr>
+<tr><th>反向实现</th><td>PyTorch autograd（也提供了手写版本对比）</td><td>手写 <code>torch.autograd.Function</code>（必须！autograd 无法直接理解跨卡通信）</td></tr>
+<tr><th>Q vs K/V 谁转</th><td>i, j 都是 for 循环下标，等价</td><td>前向 K/V 转，反向 Q 转，配合 <code>send_recv_kv</code> / <code>send_recv_q_sum_max_sumodo_dout</code></td></tr>
+<tr><th>Causal 优化</th><td>只做 elementwise mask</td><td>三分类：skip / mask / 全通</td></tr>
+<tr><th>数值稳定</th><td><code>safe_max</code> 处理 -inf</td><td>额外把 fp16/bf16 提升到 fp32 做统计</td></tr>
+<tr><th>正确性验证</th><td>与 full attention 的 autograd 梯度逐元素对齐</td><td>rank 0 与 full attention 对齐 </td></tr>
+</tbody>
+</table>
+
+<h3>为什么真·分布式版必须手写 Function？</h3>
+<div class="callout warn">
+  <span class="lead">关键：</span> PyTorch autograd 不会替你反向"倒转"NCCL 通信。你前向发 K→右邻居，反向理论上应该收 dK←右邻居，而这个"反向通信"必须<b>由你手动定义</b>。所以 <code>ring_attn.py</code> 用 <code>class RingAttentionFunction(torch.autograd.Function)</code> 显式定义 forward 与 backward 两条路径，二者<b>各自</b>调用一次 P 步的通信循环。
+</div>
+
+<h3>核心代码逐段对照</h3>
+
+<div class="card">
+  <div class="card-title">▶ forward 主循环 · 单进程版</div>
+<pre><code class="language-python">for i in range(num_of_gpus):           # 假装我是 rank i
+    qi = qkv_chunks[i][0].transpose(1,2)
+    oi = torch.zeros_like(qi)
+    mi = qi.new_full((..., 1), -inf)
+    li = torch.zeros_like(mi)
+    for j in range(num_of_gpus):        # 假装 K/V 转了 num_of_gpus 步
+        kj = qkv_chunks[j][1].transpose(1,2)
+        vj = qkv_chunks[j][2].transpose(1,2)
+        scores_ij = (qi @ kj.transpose(-2,-1)) / sqrt(d)
+        # ... online softmax merge ...</code></pre>
+</div>
+
+<div class="card">
+  <div class="card-title">▶ forward 主循环 · 分布式版（dense 分支）</div>
+<pre><code class="language-python">k_cur, v_cur = k_local.clone(), v_local.clone()
+for step in range(comm.world_size):
+    if step + 1 != comm.world_size:
+        next_k, next_v = comm.send_recv_kv(k_cur, v_cur)   # 计算与通信重叠
+    attn_scores = (q_dense @ k_cur.transpose(1,2).transpose(-2,-1)) * softmax_scale
+    # ... online softmax merge ... (代码几乎一模一样)
+    if step + 1 != comm.world_size:
+        comm.wait()
+        k_cur, v_cur = next_k, next_v</code></pre>
+</div>
+
+<p>可以看到，"j = 0..P-1 循环下标"在真实版里变成了"<code>step = 0..world_size-1</code> 沿环流动的 k_cur / v_cur"，其他<b>数学部分完全相同</b>。</p>
+
+<div class="card">
+  <div class="card-title">▶ backward · 谁在转？</div>
+<pre><code class="language-python">## 单进程版：随便挑一个下标 j 表示 "远程的 Q"
+for j in range(num_of_gpus):
+    qj = qkv_chunks[j][0].transpose(1,2)
+    dout_j = doutput_chunks[j].transpose(1,2)
+    out_j = out_chunks[j].transpose(1,2)
+    aji = torch.exp(scores_ji - max_chunks[j]) / l_chunks[j]  # 重建 A
+    dvi += aji.T @ dout_j
+    daji = dout_j @ vi.T
+    dsji = aji * (daji - torch.sum(dout_j * out_j, dim=-1, keepdim=True))
+    dki += dsji.T @ qj / sqrt(d)
+    dq_chunks[j] += dsji @ ki / sqrt(d)
+
+## 分布式版：把 (q_cur, sum, max, delta, dO_cur) 打包一起转
+for step in range(comm.world_size):
+    next_q_cur, next_sum_cur, next_max_cur, next_delta_cur, next_grad_output_cur = \
+        comm.send_recv_q_sum_max_sumodo_dout(q_cur, sum_cur, max_cur, delta_cur, grad_output_cur)
+    attn_probs = torch.exp((q_cur @ k_local.T)*scale - max_cur) / sum_cur
+    dv_local  += attn_probs.T @ dO_cur
+    dA         = dO_cur @ v_local.T
+    dS         = attn_probs * (dA - delta_cur)          # δ 已随 Q 一起转
+    dk_local  += dS.T @ q_cur * scale
+    dQ_cur    += dS @ k_local * scale
+    comm.wait(); q_cur, ... = next_q_cur, ...
+    # 关键：dQ_cur 也要跟着 Q 一起转到下一站
+    next_grad_q_cur = comm.send_recv(grad_q_cur, None)
+    comm.commit(); comm.wait()
+    grad_q_cur = next_grad_q_cur</code></pre>
+</div>
+
+<p>注意两件事：</p>
+<ol>
+<li><b>转 5 个东西</b>：Q 本身、softmax 的 sum/max、行内标量 delta、dO。少任何一个都无法在本地重建 A 与算 dS。</li>
+<li><b>dQ 也要转</b>：dQ_cur 是"当前跟着的 Q 累积的梯度"，它必须跟着 Q 一起走。转 P 步之后 dQ 转了一整圈，恰好回到 Q 的原主。</li>
+</ol>
+
+<h3>为什么 <code>max</code>/<code>sum</code> 要存下来？</h3>
+<p>反向需要 <b>A</b>，但存 A 是 O(N²) 的，这正是我们要避免的！FlashAttention 的经典技巧：<b>只存每一行的最终 max 与 sum（O(N)）</b>，反向时用 $A_{jk} = \exp(s_{jk} - m_j) / \ell_j$ <b>按块重算</b> A。这也是为什么前向 <code>ctx.save_for_backward</code> 里必须包含 <code>saved_out, saved_sum, saved_max</code>。</p>
+
+<div class="callout tip">
+<span class="lead">复习：</span>再看一眼 <span class="tag">ring_attn.py</span> line 484：
+<pre style="margin:8px 0 0;background:transparent;border:none;padding:0"><code class="language-python">ctx.save_for_backward(q_local, k_local, v_local, out_head, sum_acc, max_acc)</code></pre>
+存了这 6 样东西，就能在反向环中任意 rank 重建任意 (Q_j, K_i) 块的 A。</div>
+</section>
+
+<!-- =============== SECTION 8 =============== -->
+<section id="summary">
+<h2>⑧ 小结与实践要点</h2>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">✅ 数学上等价的三重保证</div>
+    <ul>
+      <li>Online softmax 与一次性 softmax 数值等价</li>
+      <li>Ring 前向 = 全序列 attention（demo 里 max_abs_diff &lt; 1e-6）</li>
+      <li>Ring 反向 = full attention 的 autograd 梯度</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-title">⚡ 性能关键点</div>
+    <ul>
+      <li>用 <code>batch_isend_irecv</code> 让通信与计算重叠</li>
+      <li>Causal 模式跳过 ~1/2 的未来块，理论上省一半算力</li>
+      <li>反向合并 Q/sum/max/δ/dO 到一次 P2P，降低通信调用数</li>
+      <li>fp16/bf16 场景，softmax 统计量升到 fp32 保稳定</li>
+    </ul>
+  </div>
+</div>
+
+<h3>什么时候用 Ring Attention？</h3>
+<table class="spec">
+<thead><tr><th>场景</th><th>推荐</th></tr></thead>
+<tbody>
+<tr><td>序列 &lt; 32K，能塞进单卡</td><td>用 FlashAttention 就够，Ring 是负担</td></tr>
+<tr><td>序列 32K ~ 512K，单卡 OOM</td><td><b>Ring Attention</b>（也常与 Ulysses / TP 组合）</td></tr>
+<tr><td>序列 &gt; 1M</td><td>Ring Attention + zigzag/stripe 负载均衡（causal 下三角负载不均）</td></tr>
+</tbody>
+</table>
+
+<h3>常见坑</h3>
+<ul>
+  <li><b>-inf 与 NaN</b>：因果 mask 让整块变 -inf 时，若不做 <code>safe_max</code>，<code>exp(-inf - -inf) = exp(NaN)</code> 会污染整个训练。</li>
+  <li><b>P2P 死锁</b>：<code>isend</code>/<code>irecv</code> 必须成对且用 <code>batch_isend_irecv</code>，否则相邻 rank 顺序不同会死锁。</li>
+  <li><b>反向 dQ 少转一步</b>：dQ 的旋转要与 Q 完全同步 P 步，忘写一次 send_recv 会让最终 dQ 落在错误的 rank。</li>
+  <li><b>因果负载不均</b>：naïve causal ring 里 rank P-1 只算 1 块、rank 0 算 P 块。生产用法通常用 zigzag 分区把负载摊平 —— 见 <code>bench_zigzag.py</code>。</li>
+</ul>
+
+<div class="callout tip">
+<span class="lead">扩展阅读：</span>
+<ul>
+  <li><a href="https://arxiv.org/abs/2310.01889" style="color:var(--accent)">Ring Attention with Blockwise Transformers</a> (Liu et al., 2023) — 原论文</li>
+  <li><a href="https://arxiv.org/abs/2205.14135" style="color:var(--accent)">FlashAttention</a> — Online softmax 的经典来源</li>
+  <li><a href="https://arxiv.org/abs/2309.14509" style="color:var(--accent)">Ulysses</a> — 另一种序列并行，头维度切分</li>
+</ul>
+</div>
+
+<p style="margin-top:32px;color:var(--fg-dim);font-size:14px;text-align:center">
+— 建议动手改一下两份 demo：<br>
+把 <code>ring_attn_demo_code.py</code> 的 <code>num_of_gpus</code> 从 8 改成 4，输出应完全一致；<br>
+把 <code>ring_attn.py</code> 用 <code>torchrun --nproc-per-node=4 ring_attn.py</code> 跑起来，观察 rank 0 打印的 max_abs_diff。 —
+</p>
+
+</section>
+
+</div>
+
+<!-- ============ Scripts ============ -->
+<script>
+// ======================================================================
+// SECTION 2: basic Q-K^T block animation
+// ======================================================================
+(function() {
+  const svg = document.getElementById('svg-basic');
+  const pSel = document.getElementById('basic-P');
+  const iSlider = document.getElementById('basic-i');
+  const iVal = document.getElementById('basic-i-val');
+  const stepSlider = document.getElementById('basic-step');
+  const stepVal = document.getElementById('basic-step-val');
+  const info = document.getElementById('basic-info');
+  const playBtn = document.getElementById('basic-play');
+  const resetBtn = document.getElementById('basic-reset');
+  let playing = false;
+  let interval = null;
+
+  function render() {
+    const P = parseInt(pSel.value);
+    let i = parseInt(iSlider.value);
+    let step = parseInt(stepSlider.value);
+    if (i >= P) { i = P - 1; iSlider.value = i; }
+    if (step >= P) { step = P - 1; stepSlider.value = step; }
+    iSlider.max = P - 1;
+    stepSlider.max = P - 1;
+    iVal.textContent = i;
+    stepVal.textContent = step;
+
+    // The block index of K currently visiting rank i at this step:
+    // in the ring, k_block_rank = (i - step + P) % P is typical Liu-style order,
+    // but for illustration we use (i + step) % P — either shows the concept.
+    const kIdx = (i + step) % P;
+
+    // Left side: sequence blocks + arrows
+    svg.innerHTML = '';
+    const w = 420, h = 340;
+    const cellSize = Math.min(35, 280 / P);
+    const startY = 40;
+
+    // Draw Q column (fixed)
+    const qX = 20;
+    svg.insertAdjacentHTML('beforeend', `<text x="${qX + cellSize/2}" y="30" fill="#f9a8d4" text-anchor="middle" font-size="12" font-weight="700">Q (固定)</text>`);
+    for (let r = 0; r < P; r++) {
+      const y = startY + r * (cellSize + 4);
+      const isMe = r === i;
+      svg.insertAdjacentHTML('beforeend',
+        `<rect x="${qX}" y="${y}" width="${cellSize}" height="${cellSize}" fill="${isMe ? '#f472b6' : '#3a2540'}" stroke="${isMe ? '#fce7f3' : '#2a2f4a'}" stroke-width="${isMe ? 2 : 1}" rx="4"/>` +
+        `<text x="${qX + cellSize/2}" y="${y + cellSize/2 + 4}" fill="${isMe ? '#fff' : '#7a728a'}" text-anchor="middle" font-size="10">Q${r}</text>`
+      );
+    }
+
+    // Draw K column (rotates around, at this step the block at row i is kIdx)
+    const kX = 130;
+    svg.insertAdjacentHTML('beforeend', `<text x="${kX + cellSize/2}" y="30" fill="#7dd3fc" text-anchor="middle" font-size="12" font-weight="700">K (轮转中)</text>`);
+    for (let r = 0; r < P; r++) {
+      const y = startY + r * (cellSize + 4);
+      // Which K sits opposite Q_r right now? For rank r at this step, it's (r + step) % P
+      const kAtR = (r + step) % P;
+      const isFocused = r === i;
+      svg.insertAdjacentHTML('beforeend',
+        `<rect x="${kX}" y="${y}" width="${cellSize}" height="${cellSize}" fill="${isFocused ? '#7dd3fc' : '#1e3a4f'}" stroke="${isFocused ? '#dbeafe' : '#2a2f4a'}" stroke-width="${isFocused ? 2 : 1}" rx="4"/>` +
+        `<text x="${kX + cellSize/2}" y="${y + cellSize/2 + 4}" fill="${isFocused ? '#000' : '#7a97b5'}" text-anchor="middle" font-size="10">K${kAtR}</text>`
+      );
+    }
+
+    // Right side: score matrix P x P, highlight column kIdx in row i
+    const mStartX = 240;
+    svg.insertAdjacentHTML('beforeend', `<text x="${mStartX + P * cellSize / 2 - 20}" y="30" fill="#a78bfa" text-anchor="middle" font-size="12" font-weight="700">S = QK^T 分块矩阵</text>`);
+    for (let r = 0; r < P; r++) {
+      for (let c = 0; c < P; c++) {
+        const cx = mStartX + c * (cellSize - 4);
+        const cy = startY + r * (cellSize - 4);
+        // is this block "computed so far" for row r?
+        // For row r at step s, we've computed columns (r + 0)%P, (r + 1)%P, ..., (r + s)%P
+        let computed = false;
+        for (let ss = 0; ss <= step; ss++) {
+          if (c === (r + ss) % P) computed = true;
+        }
+        const isCurrent = (r === i && c === kIdx);
+        let color = '#1a1c30';
+        if (isCurrent) color = '#a78bfa';
+        else if (computed && r === i) color = '#5b21b6';
+        else if (computed) color = '#312e4e';
+        svg.insertAdjacentHTML('beforeend',
+          `<rect x="${cx}" y="${cy}" width="${cellSize - 5}" height="${cellSize - 5}" fill="${color}" stroke="#0a0d19" stroke-width="0.5"/>`
+        );
+      }
+    }
+    // Row/col labels
+    for (let r = 0; r < P; r++) {
+      svg.insertAdjacentHTML('beforeend',
+        `<text x="${mStartX - 8}" y="${startY + r * (cellSize - 4) + cellSize/2 - 2}" fill="#6a6f8a" text-anchor="end" font-size="9">${r}</text>`
+      );
+    }
+
+    // Info text
+    let filledRow = [];
+    for (let ss = 0; ss <= step; ss++) filledRow.push((i + ss) % P);
+    info.innerHTML = `<span class="k">rank i = ${i}</span> · <span class="k">step = ${step}</span><br>` +
+      `本步计算 <span class="r">S[${i}, ${kIdx}] = Q${i} · K${kIdx}ᵀ</span><br>` +
+      `Q${i} 已看过的 K 块: <span class="n">{${filledRow.join(', ')}}</span> (共 ${step + 1}/${P})`;
+  }
+
+  pSel.addEventListener('change', () => { stepSlider.value = 0; render(); });
+  iSlider.addEventListener('input', render);
+  stepSlider.addEventListener('input', render);
+  resetBtn.addEventListener('click', () => {
+    stepSlider.value = 0; render();
+    if (playing) { playing = false; clearInterval(interval); playBtn.textContent = '▶ 播放'; }
+  });
+  playBtn.addEventListener('click', () => {
+    if (playing) {
+      playing = false; clearInterval(interval); playBtn.textContent = '▶ 播放';
+    } else {
+      playing = true; playBtn.textContent = '⏸ 暂停';
+      interval = setInterval(() => {
+        const P = parseInt(pSel.value);
+        let s = parseInt(stepSlider.value);
+        s = (s + 1) % P;
+        stepSlider.value = s;
+        render();
+      }, 900);
+    }
+  });
+  render();
+})();
+
+// ======================================================================
+// SECTION 3: online softmax demo — q ∈ ℝ², N=6 (P=3 blocks), scalar V
+// s = q·Kᵀ/√d is computed on the fly so readers see attention arithmetic
+// end-to-end, not just synthetic s values.
+// ======================================================================
+(function() {
+  const canvas = document.getElementById('osoft-canvas');
+  const info = document.getElementById('os-info');
+  const nextBtn = document.getElementById('os-next');
+  const resetBtn = document.getElementById('os-reset');
+
+  // Source data — small enough to eyeball, big enough to see block-2 refresh max
+  const q = [1.0, 0.5];
+  const K = [
+    [0.8, 1.4], [2.0, 0.6],   // block 1
+    [1.2, 0.4], [2.5, 2.8],   // block 2  → introduces new max
+    [0.6, 0.4], [1.8, 2.5],   // block 3
+  ];
+  const V = [1, 2, 3, 4, 5, 6];  // scalar V per token
+  const d = 2;
+  const scale = Math.sqrt(d);
+  const P = 3;
+  const blockSize = K.length / P;  // N/P = 2
+
+  const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
+
+  // Derive per-token score s, then split (K, V, s) into P blocks
+  const sFull = K.map(kRow => dot(q, kRow) / scale);
+  const kBlocks = [], vBlocks = [], sBlocks = [];
+  for (let j = 0; j < P; j++) {
+    kBlocks.push(K.slice(j*blockSize, (j+1)*blockSize));
+    vBlocks.push(V.slice(j*blockSize, (j+1)*blockSize));
+    sBlocks.push(sFull.slice(j*blockSize, (j+1)*blockSize));
+  }
+
+  // One-shot (reference) softmax over the full N=6
+  const mRef = Math.max(...sFull);
+  const expRef = sFull.map(v => Math.exp(v - mRef));
+  const lRef = expRef.reduce((a, e) => a + e, 0);
+  const oRef = expRef.reduce((a, e, k) => a + e * V[k], 0);
+  const outRef = oRef / lRef;
+
+  let state;
+  function reset() {
+    state = { j: 0, m: -Infinity, l: 0, o: 0, hist: [] };
+    render();
+  }
+
+  function processNext() {
+    if (state.j >= P) return;
+    const jNow = state.j;
+    const sBlk = sBlocks[jNow];
+    const vBlk = vBlocks[jNow];
+    const kBlk = kBlocks[jNow];
+
+    const mBlk = Math.max(...sBlk);
+    const mNew = Math.max(state.m, mBlk);
+    const alpha = state.m === -Infinity ? 0 : Math.exp(state.m - mNew);
+    const beta  = Math.exp(mBlk - mNew);
+    const expBlkSum = sBlk.reduce((a, v) => a + Math.exp(v - mBlk), 0);
+    const expBlkV   = sBlk.reduce((a, v, k) => a + Math.exp(v - mBlk) * vBlk[k], 0);
+    const lNew = alpha * state.l + beta * expBlkSum;
+    const oNew = alpha * state.o + beta * expBlkV;
+
+    state.hist.push({
+      jNow, kBlk, sBlk, vBlk, mBlk,
+      mOld: state.m, mNew,
+      alpha, beta,
+      lOld: state.l, lNew,
+      oOld: state.o, oNew,
+      expBlkSum, expBlkV
+    });
+    state.m = mNew; state.l = lNew; state.o = oNew; state.j += 1;
+    render();
+  }
+
+  function fmt(x, digits=3) {
+    if (x === -Infinity) return '-∞';
+    if (!isFinite(x)) return String(x);
+    return Number(x).toFixed(digits);
+  }
+  const vecStr = (v, digits=2) => '[' + v.map(x => Number(x).toFixed(digits)).join(', ') + ']';
+
+  function render() {
+    const step = state.j;  // completed blocks 0..P
+
+    let html = '';
+
+    // ---- 顶部固定 q 行 ----
+    html += `<div style="display:flex;align-items:baseline;gap:10px;padding:8px 10px;background:rgba(244,114,182,0.08);border:1px solid rgba(244,114,182,0.28);border-radius:6px;margin-bottom:10px">
+      <span style="color:#f9a8d4;font-weight:700;font-size:12px">q ∈ ℝ² (本卡固定 query)</span>
+      <span style="font-family:monospace;color:#e8ebf5">= ${vecStr(q, 1)}</span>
+      <span style="color:#6a6f8a;font-size:11px;margin-left:auto">d = 2, √d ≈ ${scale.toFixed(3)}</span>
+    </div>`;
+
+    // ---- 中部三块 (K_j, V_j, s^(j)) 卡片 ----
+    html += `<div style="font-size:11px;color:#a4a9c1;margin-bottom:4px">依次进入本卡的 P=3 块 (K_j, V_j),及现场算出的 s^(j) = q · K_jᵀ / √d :</div>`;
+    html += '<div style="display:flex;gap:6px;margin-bottom:10px">';
+    for (let j = 0; j < P; j++) {
+      const done   = j <  step;
+      const active = j === step - 1;
+      const pending= j >= step;
+      const bg = active ? 'rgba(167,139,250,0.18)' : (done ? 'rgba(125,211,252,0.10)' : '#1c2038');
+      const border = active ? '#a78bfa' : (done ? 'rgba(125,211,252,0.4)' : '#2a2f4a');
+      const label = active ? '● 当前' : (done ? '✓ 已合并' : '待处理');
+      const labelColor = active ? '#c4b5fd' : (done ? '#7dd3fc' : '#6a6f8a');
+      const dim = pending ? 0.55 : 1;
+      const kMat = kBlocks[j].map(row => vecStr(row, 1)).join('<br>&nbsp;&nbsp;');
+      const vVec = vecStr(vBlocks[j], 0);
+      let sLine;
+      if (pending) {
+        sLine = '<span style="color:#6a6f8a;font-size:10px">— s^(' + (j+1) + ') 还未算 —</span>';
+      } else {
+        const details = kBlocks[j].map((row, k) =>
+          `<div style="font-size:10px;color:#a4a9c1">s^(${j+1})[${k}] = (${q[0]}·${row[0]} + ${q[1]}·${row[1]}) / √2 = <b style="color:#fcd34d">${sBlocks[j][k].toFixed(3)}</b></div>`
+        ).join('');
+        sLine = details + `<div style="margin-top:4px;font-family:monospace;color:#fcd34d;font-size:11px">→ s^(${j+1}) = ${vecStr(sBlocks[j], 3)}</div>`;
+      }
+      html += `<div style="flex:1;padding:8px;background:${bg};border:1px solid ${border};border-radius:6px;opacity:${dim}">
+        <div style="font-size:10px;color:${labelColor};font-weight:700;margin-bottom:4px">块 ${j+1} · ${label}</div>
+        <div style="font-size:10px;color:#a4a9c1">K_${j+1} =</div>
+        <div style="font-family:monospace;color:#7dd3fc;font-size:11px">&nbsp;&nbsp;${kMat}</div>
+        <div style="font-size:10px;color:#a4a9c1;margin-top:4px">V_${j+1} = <span style="font-family:monospace;color:#6ee7b7">${vVec}</span></div>
+        <div style="margin-top:6px;padding-top:4px;border-top:1px dashed rgba(255,255,255,0.08)">${sLine}</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    // ---- 累加器状态条 ----
+    const mDisp = fmt(state.m);
+    const mMaxNorm = 3;
+    const mPct = state.m === -Infinity ? 0 : Math.max(0, Math.min(100, state.m * 100 / mMaxNorm));
+    html += `<div class="osoft-row"><div class="lab">m<sup>(${step})</sup></div><div class="bar-outer"><div class="bar-inner" style="width:${mPct}%;background:linear-gradient(90deg,#fbbf24,#f472b6)">${mDisp}</div></div></div>`;
+    html += `<div class="osoft-row"><div class="lab">ℓ<sup>(${step})</sup></div><div class="bar-outer"><div class="bar-inner" style="width:${Math.min(100, state.l * 30)}%">${fmt(state.l)}</div></div></div>`;
+    html += `<div class="osoft-row"><div class="lab">o<sup>(${step})</sup></div><div class="bar-outer"><div class="bar-inner" style="width:${Math.min(100, state.o * 8)}%;background:linear-gradient(90deg,#34d399,#7dd3fc)">${fmt(state.o)}</div></div></div>`;
+    html += `<div class="osoft-row"><div class="lab" style="color:#a78bfa">o/ℓ</div><div class="bar-outer"><div class="bar-inner" style="width:${Math.min(100, state.l > 0 ? (state.o/state.l)*20 : 0)}%;background:linear-gradient(90deg,#a78bfa,#f472b6)">${state.l > 0 ? fmt(state.o/state.l) : '—'}</div></div></div>`;
+
+    // ---- 一次性 softmax 参考条 ----
+    html += `<div style="margin-top:10px;padding:8px 10px;background:rgba(52,211,153,0.08);border-left:3px solid #34d399;border-radius:4px">`;
+    html += `<div style="font-size:11px;color:#6ee7b7;font-weight:700;margin-bottom:4px">📌 参考:一次性 softmax(直接看完 N=6 的完整 s)</div>`;
+    html += `<div style="font-family:monospace;font-size:11px;color:#d9dcf0">m = ${fmt(mRef)}, &nbsp; ℓ = ${fmt(lRef)}, &nbsp; o = ${fmt(oRef)}, &nbsp; <b>o/ℓ = ${fmt(outRef)}</b></div>`;
+    if (step === P) {
+      const diff = Math.abs(state.o / state.l - outRef);
+      html += `<div style="margin-top:6px;font-size:11px;color:#7dd3fc"><b>✓ online 结果 ${fmt(state.o/state.l)} 与参考 ${fmt(outRef)} 逐元素相等 (差 = ${diff.toExponential(2)})</b></div>`;
+    }
+    html += `</div>`;
+
+    canvas.innerHTML = html;
+
+    // ---- 右侧步骤说明 ----
+    if (state.hist.length > 0) {
+      const h = state.hist[state.hist.length - 1];
+      const j = h.jNow + 1;
+      const rescale = (h.mOld !== -Infinity && h.mNew > h.mOld);
+      info.innerHTML =
+        `<b style="color:#a78bfa">刚合并第 ${j} 块</b> · s<sup>(${j})</sup> = ${vecStr(h.sBlk, 3)}<br>` +
+        `<span style="color:#a4a9c1">①</span> 本块 max = <span class="k">${fmt(h.mBlk)}</span><br>` +
+        `<span style="color:#a4a9c1">②</span> m<sup>(${j-1})</sup>=<span class="k">${fmt(h.mOld)}</span> → m<sup>(${j})</sup>=<span class="k">${fmt(h.mNew)}</span> ${rescale ? '<span style="color:#fbbf24">🔥 新 max 刷新</span>' : ''}<br>` +
+        `<span style="color:#a4a9c1">③</span> α=<span class="g">${fmt(h.alpha, 4)}</span>${rescale ? ' <span style="color:#fbbf24">← 需缩放旧累加器</span>' : ''}, β=<span class="g">${fmt(h.beta, 4)}</span><br>` +
+        `<span style="color:#a4a9c1">④</span> ℓ: <span class="n">${fmt(h.lOld)}</span>·α + <span class="n">${fmt(h.expBlkSum)}</span>·β = <span class="r">${fmt(h.lNew)}</span><br>` +
+        `<span style="color:#a4a9c1">⑤</span> o: <span class="n">${fmt(h.oOld)}</span>·α + <span class="n">${fmt(h.expBlkV)}</span>·β = <span class="r">${fmt(h.oNew)}</span>`;
+    } else {
+      info.innerHTML = '初始态:m<sup>(0)</sup> = -∞, ℓ<sup>(0)</sup> = 0, o<sup>(0)</sup> = 0<br>点『下一块 →』依次让 3 块 (K_j, V_j) 进入本卡。';
+    }
+    nextBtn.disabled = state.j >= P;
+  }
+
+  nextBtn.addEventListener('click', processNext);
+  resetBtn.addEventListener('click', reset);
+  reset();
+})();
+
+// ======================================================================
+// SECTION 4: full ring animation
+// ======================================================================
+(function() {
+  const svg = document.getElementById('svg-ring');
+  const info = document.getElementById('ring-info');
+  const stepTracker = document.getElementById('ring-steps');
+  const matrixDiv = document.getElementById('ring-matrix');
+  const playBtn = document.getElementById('ring-play');
+  const stepBtn = document.getElementById('ring-step');
+  const resetBtn = document.getElementById('ring-reset');
+  const pSel = document.getElementById('ring-P');
+  const speedSlider = document.getElementById('ring-speed');
+
+  let P = 8, step = 0, playing = false, interval = null;
+
+  function draw() {
+    svg.innerHTML = '';
+    const cx = 230, cy = 230, R = 150;
+    // Draw ring circle
+    svg.insertAdjacentHTML('beforeend', `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#2a2f4a" stroke-width="1" stroke-dasharray="4,4"/>`);
+    // Draw arrows around
+    for (let i = 0; i < P; i++) {
+      const a1 = (i / P) * 2 * Math.PI - Math.PI / 2;
+      const a2 = ((i + 1) / P) * 2 * Math.PI - Math.PI / 2;
+      const gap = 0.15;
+      const ax1 = cx + R * Math.cos(a1 + gap);
+      const ay1 = cy + R * Math.sin(a1 + gap);
+      const ax2 = cx + R * Math.cos(a2 - gap);
+      const ay2 = cy + R * Math.sin(a2 - gap);
+      const active = false;
+      svg.insertAdjacentHTML('beforeend',
+        `<line x1="${ax1}" y1="${ay1}" x2="${ax2}" y2="${ay2}" stroke="${active ? '#fbbf24' : '#3a3f5a'}" stroke-width="1.5" marker-end="url(#arrow)"/>`
+      );
+    }
+    svg.insertAdjacentHTML('beforeend',
+      `<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a5f7a"/>
+      </marker></defs>`
+    );
+
+    // GPU nodes
+    for (let i = 0; i < P; i++) {
+      const angle = (i / P) * 2 * Math.PI - Math.PI / 2;
+      const x = cx + R * Math.cos(angle);
+      const y = cy + R * Math.sin(angle);
+      // Which K block is at rank i now: (i - step + P) % P was the original K at some earlier rank, but here it's (i + step) % P equivalently
+      const kIdxHere = (i + step) % P;
+      svg.insertAdjacentHTML('beforeend',
+        `<circle cx="${x}" cy="${y}" r="30" fill="#1c2038" stroke="#4a5070" stroke-width="1.5"/>`
+      );
+      // Q label (fixed = own index)
+      svg.insertAdjacentHTML('beforeend',
+        `<text x="${x}" y="${y - 8}" fill="#f9a8d4" text-anchor="middle" font-size="11" font-weight="700">Q${i}</text>` +
+        `<text x="${x}" y="${y + 5}" fill="#a4a9c1" text-anchor="middle" font-size="9">─────</text>` +
+        `<text x="${x}" y="${y + 16}" fill="#7dd3fc" text-anchor="middle" font-size="11" font-weight="700">K${kIdxHere}</text>`
+      );
+    }
+
+    // Center label
+    svg.insertAdjacentHTML('beforeend',
+      `<text x="${cx}" y="${cy - 8}" fill="#a78bfa" text-anchor="middle" font-size="15" font-weight="700">Ring step</text>` +
+      `<text x="${cx}" y="${cy + 20}" fill="#fbbf24" text-anchor="middle" font-size="32" font-weight="800">${step + 1}/${P}</text>`
+    );
+
+    // Update step tracker
+    stepTracker.innerHTML = '';
+    for (let s = 0; s < P; s++) {
+      const div = document.createElement('div');
+      div.className = 'step-dot' + (s === step ? ' active' : (s < step ? ' done' : ''));
+      div.textContent = s;
+      stepTracker.appendChild(div);
+    }
+
+    // Update block matrix per rank
+    matrixDiv.innerHTML = '';
+    for (let i = 0; i < P; i++) {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#0a0d1a;border:1px solid #2a2f4a;border-radius:6px;padding:6px;';
+      const cellSize = Math.max(8, Math.floor(120 / P));
+      let html = `<div style="font-size:10px;color:#a4a9c1;text-align:center;margin-bottom:3px">rank <b style="color:#f9a8d4">${i}</b></div>`;
+      html += '<div style="display:flex;justify-content:center"><table style="border-collapse:collapse">';
+      for (let r = 0; r < 1; r++) {
+        html += '<tr>';
+        for (let c = 0; c < P; c++) {
+          const isFilled = ((i + 999) % P + P) % P; // dummy
+          let filled = false;
+          for (let ss = 0; ss <= step; ss++) if (c === (i + ss) % P) filled = true;
+          const isCur = c === (i + step) % P;
+          const bg = isCur ? '#fbbf24' : (filled ? '#7dd3fc' : '#1a1c30');
+          html += `<td style="width:${cellSize}px;height:${cellSize}px;background:${bg};border:1px solid #0a0d19"></td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</table></div>';
+      card.innerHTML = html;
+      matrixDiv.appendChild(card);
+    }
+
+    info.innerHTML = `<span class="k">step ${step + 1}/${P}</span> · 每张卡 rank i 正在算 <span class="r">S[i, (i+${step}) mod ${P}]</span>；` +
+      `所有 ${P} 张卡并行地做同一件事。<br>` +
+      `已累积块数：<span class="n">${step + 1}</span>，剩余：<span class="g">${P - step - 1}</span>`;
+  }
+
+  function next() {
+    step = (step + 1) % P;
+    draw();
+  }
+  function reset() {
+    step = 0; draw();
+    if (playing) { playing = false; clearInterval(interval); playBtn.textContent = '▶ 自动播放'; }
+  }
+  pSel.addEventListener('change', () => { P = parseInt(pSel.value); step = 0; draw(); });
+  stepBtn.addEventListener('click', next);
+  resetBtn.addEventListener('click', reset);
+  playBtn.addEventListener('click', () => {
+    if (playing) {
+      playing = false; clearInterval(interval); playBtn.textContent = '▶ 自动播放';
+    } else {
+      playing = true; playBtn.textContent = '⏸ 暂停';
+      interval = setInterval(next, parseInt(speedSlider.value));
+    }
+  });
+  speedSlider.addEventListener('input', () => {
+    if (playing) { clearInterval(interval); interval = setInterval(next, parseInt(speedSlider.value)); }
+  });
+  draw();
+})();
+
+// ======================================================================
+// SECTION 5: backward ring animation
+// ======================================================================
+(function() {
+  const svg = document.getElementById('svg-ring-bwd');
+  const info = document.getElementById('bwd-info');
+  const stepTracker = document.getElementById('bwd-steps');
+  const playBtn = document.getElementById('bwd-play');
+  const stepBtn = document.getElementById('bwd-step');
+  const resetBtn = document.getElementById('bwd-reset');
+
+  const P = 6;
+  let step = 0, playing = false, interval = null;
+
+  function draw() {
+    svg.innerHTML = '';
+    const cx = 230, cy = 230, R = 150;
+    svg.insertAdjacentHTML('beforeend', `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#2a2f4a" stroke-width="1" stroke-dasharray="4,4"/>`);
+
+    for (let i = 0; i < P; i++) {
+      const angle = (i / P) * 2 * Math.PI - Math.PI / 2;
+      const x = cx + R * Math.cos(angle);
+      const y = cy + R * Math.sin(angle);
+      // Which Q block is at this rank now? Q rotates: q at rank i = (i - step + P) % P
+      const qIdxHere = ((i - step) % P + P) % P;
+      svg.insertAdjacentHTML('beforeend',
+        `<circle cx="${x}" cy="${y}" r="34" fill="#1c2038" stroke="#4a5070" stroke-width="1.5"/>`
+      );
+      // K/V fixed
+      svg.insertAdjacentHTML('beforeend',
+        `<text x="${x}" y="${y - 12}" fill="#7dd3fc" text-anchor="middle" font-size="10" font-weight="700">K${i}V${i}</text>` +
+        `<text x="${x}" y="${y - 1}" fill="#6a6f8a" text-anchor="middle" font-size="8">▲固定</text>` +
+        `<text x="${x}" y="${y + 12}" fill="#f9a8d4" text-anchor="middle" font-size="10" font-weight="700">Q${qIdxHere}</text>` +
+        `<text x="${x}" y="${y + 23}" fill="#fbbf24" text-anchor="middle" font-size="9" font-weight="700">dQ${qIdxHere}</text>`
+      );
+    }
+
+    svg.insertAdjacentHTML('beforeend',
+      `<text x="${cx}" y="${cy - 20}" fill="#a78bfa" text-anchor="middle" font-size="14" font-weight="700">backward step</text>` +
+      `<text x="${cx}" y="${cy + 8}" fill="#fbbf24" text-anchor="middle" font-size="30" font-weight="800">${step + 1}/${P}</text>` +
+      `<text x="${cx}" y="${cy + 32}" fill="#a4a9c1" text-anchor="middle" font-size="10">K/V 不动 · Q+dQ 沿环转</text>`
+    );
+
+    stepTracker.innerHTML = '';
+    for (let s = 0; s < P; s++) {
+      const div = document.createElement('div');
+      div.className = 'step-dot' + (s === step ? ' active' : (s < step ? ' done' : ''));
+      div.textContent = s;
+      stepTracker.appendChild(div);
+    }
+
+    info.innerHTML = `<span class="k">step ${step + 1}/${P}</span><br>` +
+      `此时 rank i 上是 Q<span class="r">${((0 - step) % P + P) % P}</span> 到达 rank 0，Q<span class="r">${((1 - step) % P + P) % P}</span> 到达 rank 1 …<br>` +
+      `每张卡都在算：<span class="g">dV_i += A^T @ dO_cur</span>, <span class="g">dK_i += dS^T @ Q_cur</span>, <span class="g">dQ_cur += dS @ K_i</span>`;
+  }
+
+  function next() { step = (step + 1) % P; draw(); }
+  function reset() {
+    step = 0; draw();
+    if (playing) { playing = false; clearInterval(interval); playBtn.textContent = '▶ 自动播放'; }
+  }
+  stepBtn.addEventListener('click', next);
+  resetBtn.addEventListener('click', reset);
+  playBtn.addEventListener('click', () => {
+    if (playing) {
+      playing = false; clearInterval(interval); playBtn.textContent = '▶ 自动播放';
+    } else {
+      playing = true; playBtn.textContent = '⏸ 暂停';
+      interval = setInterval(next, 900);
+    }
+  });
+  draw();
+})();
+
+// ======================================================================
+// SECTION 6: causal heatmap
+// ======================================================================
+(function() {
+  const table = document.getElementById('causal-heatmap');
+  const iSlider = document.getElementById('causal-i');
+  const iVal = document.getElementById('causal-i-val');
+  const stepSlider = document.getElementById('causal-step');
+  const stepVal = document.getElementById('causal-step-val');
+  const info = document.getElementById('causal-info');
+  const P = 8;
+
+  function render() {
+    const iSel = parseInt(iSlider.value);
+    const stepSel = parseInt(stepSlider.value);
+    iVal.textContent = iSel;
+    stepVal.textContent = stepSel;
+    table.innerHTML = '';
+    for (let r = 0; r < P; r++) {
+      const tr = document.createElement('tr');
+      for (let c = 0; c < P; c++) {
+        const td = document.createElement('td');
+        let bg = '#4b5563';
+        let text = '';
+        if (c < r) { bg = '#065f46'; text = '✓'; }
+        else if (c === r) { bg = '#b45309'; text = 'M'; }
+        // highlight current step for row iSel
+        if (r === iSel) {
+          const kIdx = ((iSel - stepSel) % P + P) % P;
+          if (c === kIdx) {
+            bg = '#fbbf24';
+            text = '●';
+          }
+        }
+        td.style.background = bg;
+        td.textContent = text;
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+
+    const kIdx = ((iSel - stepSel) % P + P) % P;
+    let status, reason;
+    if (kIdx < iSel) {
+      status = '<span style="color:#6ee7b7">全部合法（无 mask）</span>';
+      reason = 'K 块完全在 Q 之前，直接 matmul。';
+    } else if (kIdx === iSel) {
+      status = '<span style="color:#fbbf24">对角块（需 elementwise mask）</span>';
+      reason = 'Q 和 K 部分重叠，构造 mask 把 j&gt;i 位置置 -inf。';
+    } else {
+      status = '<span style="color:#9ca3af">skip！</span>';
+      reason = 'K 块完全在 Q 之后，因果不可见，跳过 matmul。';
+    }
+    info.innerHTML = `rank <span class="r">${iSel}</span>, step <span class="k">${stepSel}</span> → 遇到 K 块 <span class="n">${kIdx}</span><br>` +
+      `状态：${status}<br>` +
+      `<span style="color:var(--fg-dim)">${reason}</span>`;
+  }
+  iSlider.addEventListener('input', render);
+  stepSlider.addEventListener('input', render);
+  render();
+})();
+</script>
+
+</body>
+</html>
