@@ -1,5 +1,170 @@
 # Optimized Ring Flash Attention
 
+On 8×H100 with bf16 causal workloads, this drop-in replacement of the open-source baseline `ring_flash_attn.py` achieves up to **3.0×** forward and up to **3.1×** fwd+bwd speedup on long sequences; behavior is 100% compatible and GQA is supported natively.
+
+---
+
+## 1. Ring Attention Primer
+
+Ring attention shards the sequence dimension into W chunks across W GPUs. Each rank holds one Q/K/V slice; K/V then rotate around a ring for W-1 hops. At each step every rank runs one attention over its local Q and the current K/V, merges the partial output into an accumulator via **online softmax**, and non-blockingly forwards K/V to the next rank while receiving the next slice from the previous rank. After W steps every Q has seen every K/V — equivalent to full-sequence attention.
+
+```
+for step in range(W):
+    if step + 1 < W: async send(K,V → next);  recv(K,V ← prev)
+    block_out, block_lse = attn(Q_local, K_cur, V_cur)
+    out_acc, lse_acc = online_softmax_merge(out_acc, lse_acc, block_out, block_lse)
+    if step + 1 < W: wait()
+```
+
+Backward is analogous: K/V stay local, dK/dV accumulate around the ring, dQ accumulates in place.
+
+**Reference implementations of the underlying method (easiest → hardest):**
+- `ring_attn_demo_code.py` — single-process 8-rank simulation with a hand-derived forward + backward
+- `ring_attn.py` — real NCCL-distributed pure-PyTorch version (no flash-attn, plain matmul)
+- `ring_attention_explained.html` — detailed derivation with diagrams
+
+---
+
+## 2. Usage
+
+`optimized_ring_flash_attn.py` is our deeply-optimized **fast ring flash attention** implementation, built on top of the open-source [zhuzilin/ring-flash-attention](https://github.com/zhuzilin/ring-flash-attention). It fuses Triton kernels, packs P2P communication, reuses workspace buffers, and keeps softmax state in fp32 across ring steps. On 8×H100 it delivers up to 3.0× forward and up to 3.1× long-sequence fwd+bwd speedup over baseline, is 100% API-compatible, and natively supports GQA (see §3 and §4 for details).
+
+**User API:**
+
+```python
+import torch.distributed as dist
+from optimized_ring_flash_attn import ring_flash_attn
+
+# q: [B, S_local, H_q,  D]   bf16 / fp16
+# k: [B, S_local, H_kv, D]   H_kv may be < H_q (GQA)
+# v: [B, S_local, H_kv, D]
+out = ring_flash_attn(
+    q, k, v,
+    softmax_scale=None,      # defaults to 1/sqrt(D)
+    causal=True,
+    group=None,              # dist.ProcessGroup, defaults to WORLD
+)
+```
+
+Constraints: `H_q % H_kv == 0`, `head_dim ≤ 128`. `ring_flash_attn` is a standard `torch.autograd.Function` — drop it into any training graph.
+
+**Run the tests (correctness + speedup + ablation):**
+
+```bash
+torchrun --nproc_per_node=8 --standalone test_optimized_ring_flash_attn.py
+# ablation only:
+SKIP_CORRECTNESS=1 SKIP_SPEEDUP=1 torchrun --nproc_per_node=8 --standalone \
+    test_optimized_ring_flash_attn.py
+```
+
+**Environment knobs:**
+| Variable | Effect |
+|---|---|
+| `OPTIMIZED_RING_FORWARD_IMPL` | `auto` / `triton_native` / `flash_triton_merge` — force forward impl |
+| `OPTIMIZED_RING_BACKWARD_IMPL` | `auto` / `triton_native` / `flash` — force backward impl |
+| `OPTIMIZED_RING_BWD_COMM_BF16` | `1` → send dk/dv in bf16 (default fp32) |
+
+**Dependencies:** `torch (with distributed)` · `flash-attn` · `triton`
+
+---
+
+## 3. Optimizations
+
+`ring_flash_attn.py` is ported directly from [zhuzilin/ring-flash-attention](https://github.com/zhuzilin/ring-flash-attention). On top of it, `optimized_ring_flash_attn.py` applies:
+
+| # | Optimization | Baseline | Optimized |
+|---|---|---|---|
+| a | **online-softmax merge** | `sigmoid/logsigmoid` combo, 4+ elementwise kernels per merge; out_acc casts bf16⇄fp32 every step | one fused Triton kernel does max-scale-add-log; out_acc stays fp32 throughout |
+| b | **packed K/V P2P** | 4 P2P ops per hop (K/V send + recv separately) | packed into `[2,B,S,H_kv,D]` → **2 P2P ops per hop** |
+| c | **workspace cache** | `torch.empty_like(k)` per hop for the recv buffer | single-slot cache keyed by shape+dtype; 100% hit rate in training loops |
+| d | **double-buffered comm** | single buffer, no comm/compute overlap | two recv buffers alternated; next-hop recv fully overlaps current-hop compute |
+| e | **native Triton fwd kernel** | flash-attn every step; `(m,l,acc)` round-trips bf16⇄fp32 through HBM | hand-written Triton flash-attn; `(m,l,acc)` **stay fp32 across ring steps**; uses `exp2` instead of `exp` |
+| f | **fused grad accumulation (bwd)** | per hop `block_dk.to(fp32) + dk_prev.add_()`: 4 launches + 2 intermediate tensors | one Triton kernel fuses dtype cast + add + store |
+| g | **GQA support** | assumes `K.shape == Q.shape` | supports any `H_q % H_kv == 0` |
+| h | **adaptive dispatcher** | one hard-coded impl | picks between `triton_native` and `flash_triton_merge` based on `(head_dim, seq_len, num_heads, world_size)` |
+
+---
+
+## 4. Performance
+
+Test rig: 8×H100 80GB HBM3 · bf16 · causal=True · MHA · reporting slowest-rank wall-clock.
+
+### 4.1 Correctness
+
+24 configs (`head_dim ∈ {64,128}` × `(H_q,H_kv) ∈ {(8,8),(16,2)}` × `S_local ∈ {1024,2048,4096}` × `causal ∈ {False,True}`) **all pass**. `max_diff` of out/dq/dk against a single-GPU flash-attn reference sits stably in `1e-3 ~ 3e-2` (bf16); GQA+causal dv peaks at `6.25e-2`, which is normal bf16 accumulation noise.
+
+### 4.2 Baseline vs Optimized speedup
+
+**⭐ Emphasized configuration: ws=8 · head_dim=128**
+
+| S_local | H | base_fwd (ms) | opt_fwd (ms) | **fwd speedup** | base_fbw (ms) | opt_fbw (ms) | **fbw speedup** |
+|---:|---:|---:|---:|:---:|---:|---:|:---:|
+| 1024 | 8 | 1.57 | 0.53 | **2.96×** | 5.27 | 3.87 | 1.36× |
+| 2048 | 8 | 1.57 | 1.14 | 1.38× | 5.17 | 4.09 | 1.26× |
+| 4096 | 8 | 3.10 | 2.53 | 1.23× | 9.42 | 8.76 | 1.08× |
+| 8192 | 8 | 7.99 | 6.93 | 1.15× | 84.61 | 27.41 | **3.09×** |
+| 1024 | 16 | 1.78 | 1.00 | 1.78× | 5.44 | 3.93 | 1.38× |
+| 2048 | 16 | 2.53 | 2.15 | 1.18× | 8.30 | 7.96 | 1.04× |
+| 4096 | 16 | 5.70 | 5.23 | 1.09× | 17.67 | 17.25 | 1.02× |
+| 8192 | 16 | 16.39 | 14.71 | 1.11× | 87.80 | 52.96 | **1.66×** |
+
+**Key observations:**
+- **Big fwd win on short sequences (2.96× @ S=1024)** — comm/kernel-launch overhead dominates, and packed P2P + workspace caching absorb all of it.
+- **Explosive fwbw gain on long sequences (3.09× @ S=8192, H=8)** — baseline backward produces a stream of fp32 intermediates for chained `add` per hop; this cost scales with S and H_kv. Our fused grad-accum Triton kernel eliminates every KV-elementwise intermediate.
+
+**head_dim=64 reference table:**
+
+| S_local | H | fwd speedup | fbw speedup | | S_local | H | fwd speedup | fbw speedup |
+|---:|---:|:---:|:---:|:---:|---:|---:|:---:|:---:|
+| 1024 | 8 | 2.78× | 2.32× | | 1024 | 16 | 2.92× | 2.20× |
+| 2048 | 8 | 2.29× | 1.97× | | 2048 | 16 | 1.33× | 1.13× |
+| 4096 | 8 | 1.22× | 0.94× | | 4096 | 16 | 1.09× | 1.00× |
+| 8192 | 8 | 1.11× | 1.05× | | 8192 | 16 | 1.10× | 1.35× |
+
+### 4.3 Ablation study (forward, ws=8, causal=True)
+
+Optimizations are added cumulatively to isolate each contribution:
+
+- **A0**: baseline (sigmoid/logsigmoid merge + 4 P2P/hop + empty_like/hop)
+- **A1**: A0 + packed P2P (2 ops/hop) + workspace cache
+- **A2**: A1 + fused Triton merge kernel
+- **A3**: A2 + native Triton fwd (fp32 handoff, eliminates bf16⇄fp32 round-trips)
+
+**⭐ head_dim=128:**
+
+| S_local | H | A0 (ms) | A1 vs A0 | A2 vs A0 | **A3 vs A0** |
+|---:|---:|---:|:---:|:---:|:---:|
+| 2048 | 8 | 1.52 | 1.25× | 1.24× | **1.34×** |
+| 4096 | 8 | 3.11 | 1.05× | 1.07× | **1.23×** |
+| 8192 | 8 | 7.98 | 1.02× | 1.02× | **1.16×** |
+| 2048 | 16 | 2.44 | 1.06× | 1.07× | **1.12×** |
+| 4096 | 16 | 5.68 | 1.05× | 1.04× | **1.08×** |
+| 8192 | 16 | 16.39 | 1.01× | 1.01× | **1.12×** |
+
+**head_dim=64:**
+
+| S_local | H | A0 (ms) | A1 vs A0 | A2 vs A0 | **A3 vs A0** |
+|---:|---:|---:|:---:|:---:|:---:|
+| 2048 | 8 | 1.49 | 1.22× | 1.21× | **1.93×** |
+| 4096 | 8 | 1.75 | 1.07× | 1.09× | **1.14×** |
+| 8192 | 8 | 4.60 | 1.02× | 1.03× | **1.11×** |
+| 2048 | 16 | 1.54 | 1.29× | 1.19× | 1.29× |
+| 4096 | 16 | 3.24 | 1.07× | 1.05× | 1.09× |
+| 8192 | 16 | 9.30 | 1.02× | 1.01× | 1.09× |
+
+**Takeaways:**
+- **A1 (packed comm + workspace cache)** — dominates on short sequences (~20-30% gain); the win is a fixed O(W) overhead reduction, so it dilutes as compute grows.
+- **A2 (triton merge kernel)** — near-zero raw speed gain by itself; its real value is keeping out_acc in fp32 so the native fwd path can plug in cleanly.
+- **A3 (native triton fwd)** — a steady **5–15% marginal gain and the only reliable long-sequence forward accelerator**; the fp32 state carried across ring steps saves per-step bf16⇄fp32 HBM bandwidth.
+- **The huge backward speedup (§4.2, 3.09× on long seq)** is not visible in this forward-only ablation. It comes from fused grad-accum + packed dk/dv comm + fp32 dq accumulator.
+
+---
+---
+
+# 中文版本 (Chinese)
+
+# Optimized Ring Flash Attention
+
 在 8×H100 上以 bf16 causal 场景为基准，相对开源 baseline `ring_flash_attn.py` 的 forward 最高 **3.0×**、fwd+bwd 长序列最高 **3.1×**；行为 100% 兼容且原生支持 **GQA**。
 
 ---
@@ -18,7 +183,7 @@ for step in range(W):
 
 Backward 类似，K/V 保持本地不动，dK/dV 沿环累加、dQ 就地累积。
 
-**方法原理实现：**
+**方法原理实现（从易到难）：**
 - `ring_attn_demo_code.py` — 单进程 8-rank 模拟，含手写前后向数学推导
 - `ring_attn.py` — NCCL 分布式 PyTorch 版（无 flash-attn，纯 matmul）
 - `ring_attention_explained.html` — 原理详解与图示
