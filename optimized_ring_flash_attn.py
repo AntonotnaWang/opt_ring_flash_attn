@@ -3,11 +3,17 @@ Optimized Ring Flash Attention
 ==============================
 
 A drop-in replacement for `ring_flash_attn.ring_flash_attn_func` with the same
-autograd semantics, but ~2-3x faster forward and ~1.5-2.5x faster backward
-across most shapes on H100 NVLink.
+autograd semantics. Measured on H100 NVLink (bf16, max-over-ranks median vs the
+zhuzilin baseline): forward ~1.1-1.4x faster at world_size 4 and ~1.2-1.9x at
+world_size 8; forward+backward ~1.05-1.2x and ~1.1-1.35x respectively; near
+parity at world_size 2 (single hop). Speedup grows with world_size (ring hop
+count) and is largest for GQA / causal shapes.
 
-`ring_flash_attn.ring_flash_attn_func` 的直接替换实现，autograd 语义完全一致；
-在 H100 NVLink 上多数 shape 下 forward 快 2-3 倍、backward 快 1.5-2.5 倍。
+`ring_flash_attn.ring_flash_attn_func` 的直接替换实现，autograd 语义完全一致。
+H100 NVLink 实测（bf16，跨 rank 取 median 后取最大值，对比 zhuzilin baseline）：
+world_size=4 时 forward 快约 1.1-1.4 倍、world_size=8 约 1.2-1.9 倍；forward+backward
+分别约 1.05-1.2 倍与 1.1-1.35 倍；world_size=2（单 hop）基本持平。加速随 world_size
+（ring hop 数）增大，GQA / causal 形状收益最大。
 
 Concept refresher / 原理简述
 ----------------------------
@@ -37,8 +43,12 @@ Baseline 实现的性能损失点（本文件逐一优化）:
       每 hop 4 个 P2P op（K、V 各 send/recv）
   (d) `sigmoid + logsigmoid` JIT'd merge (4 kernel launches per merge)
       merge 用 pytorch op（每次合并 4 个 kernel launch）
-  (e) No GQA support (assumes K.shape == Q.shape)
-      不支持 GQA
+  (e) backward re-allocates the fp32 dk/dv accumulators every ring step
+      (`dk = block_dk + next_dk`) instead of reusing a pool
+      backward 每步都重新分配 dk/dv 的 fp32 累加器，而不是复用缓冲池
+  (Baseline DOES support GQA via flash-attn; this file additionally adds
+   GQA-aware native triton kernels. / baseline 本身经 flash-attn 支持 GQA，
+   本文件额外提供了 GQA 感知的 native triton kernel。)
 
 File layout / 文件结构
 ----------------------
@@ -388,8 +398,16 @@ def _launch_merge(block_out, block_lse, out_acc, lse_acc, out,
     full-length accumulator. Slice window is used by zigzag; regular ring
     passes (0, local_seq)."""
     batch, full_seq, num_heads, head_dim = out_acc.shape
-    BLOCK_M, BLOCK_D = 128, _next_power_of_2(head_dim)
+    BLOCK_D = _next_power_of_2(head_dim)
+    # Cap the per-program fp32 register tile (block_out + old_out + merged all
+    # live in registers). A fixed BLOCK_M=128 spills badly for large head_dim
+    # (e.g. D=256 -> 128x256 fp32 tile), making the merge ~4.5x slower. Keep the
+    # tile near ~8192 fp32 elems so hd=64 -> 128, hd=128 -> 64, hd=256 -> 32.
+    BLOCK_M = max(16, min(128, 8192 // BLOCK_D))
     grid = (triton.cdiv(slice_len, BLOCK_M), batch, num_heads)
+    # num_warps: swept {1,2,4,8,16} across hd=64..256 at the BLOCK_M above; the
+    # merge is HBM-bandwidth-bound and nw=4 already saturates it (nw=1/2 slower;
+    # nw=8/16 tie within ~1-2us of nw=4 and flip with S, i.e. noise). Keep 4.
     _merge_kernel[grid](
         block_out, block_lse, out_acc, lse_acc, out,
         slice_start, slice_len, full_seq,
@@ -1081,7 +1099,7 @@ def _select_backward_impl(head_dim, num_q_heads, num_kv_heads, local_seq):
           KV-tile CTA too serial (`group_size * local_seq` proxy), or
       (b) large Hq * local_seq means many CTAs and each has a long M-loop,
           amortizing kernel launch/pipeline setup badly vs. flash-attn cutlass.
-    Both thresholds hand-tuned on H100 (see /tmp/perf_full.json bench).
+    Both thresholds hand-tuned on H100.
     """
     forced = os.getenv("OPTIMIZED_RING_BACKWARD_IMPL", "auto").strip().lower()
     if forced in ("triton_native", "flash"):
@@ -1343,7 +1361,8 @@ def ring_flash_attn(
       out: [B, S_local, H_q, D] same dtype as q.
 
     Notes:
-      Requires H_q % H_kv == 0 (GQA). Head_dim up to 128.
+      Requires H_q % H_kv == 0 (GQA). Head_dim up to 256 (hd > 128 runs on
+      the flash+merge path; hd <= 128 can use the native triton path).
     """
     return _RingFlashAttnFunc.apply(q, k, v, softmax_scale, causal, zigzag, group)
 
@@ -1352,7 +1371,7 @@ def ring_flash_attn(
 # 9. __main__ — smoke test + micro-benchmark / 冒烟测试 + 微基准
 # ---------------------------------------------------------------------------
 # Run with / 运行方式:
-#   torchrun --nproc_per_node=<N> --standalone optimized_ring_flash_attn_v2.py
+#   torchrun --nproc_per_node=<N> --standalone optimized_ring_flash_attn.py
 #
 # What it does:
 #   * builds a small (B=1, S=8192, H_q=8, H_kv=2, D=64) bf16 GQA test case
